@@ -1,0 +1,156 @@
+// This is your Prisma schema file
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Клиенты
+model Client {
+  id           Int            @id @default(autoincrement())
+  fullName     String        @map("full_name")
+  phone        String        @unique
+  photoUrl     String?       @map("photo_url")
+  telegramId   String?       @unique @map("telegram_id")
+  tariffId     Int?         @map("tariff_id")
+  status       Boolean       @default(true)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  // Связи
+  tariff       Tariff?       @relation(fields: [tariffId], references: [id])
+  subscriptions Subscription[]
+  visits       Visit[]
+  feedback     Feedback[]
+
+  @@map("clients")
+}
+
+// Тарифы
+model Tariff {
+  id           Int            @id @default(autoincrement())
+  name         String
+  price        Decimal
+  durationDays Int           @map("duration_days")
+  freezeLimit  Int           @map("freeze_limit")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  // Связи
+  clients      Client[]
+  subscriptions Subscription[]
+
+  @@map("tariffs")
+}
+
+// Абонементы клиентов
+model Subscription {
+  id           Int            @id @default(autoincrement())
+  clientId     Int           @map("client_id")
+  tariffId     Int           @map("tariff_id")
+  startDate    DateTime      @map("start_date")
+  endDate      DateTime      @map("end_date")
+  status       String        @default("active") // active, frozen, completed
+  freezeUsed   Int           @default(0) @map("freeze_used")
+  remainingDays Int          @map("remaining_days")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  // Связи
+  client       Client        @relation(fields: [clientId], references: [id])
+  tariff       Tariff        @relation(fields: [tariffId], references: [id])
+  visits       Visit[]
+
+  @@map("subscriptions")
+}
+
+// Посещения
+model Visit {
+  id             Int            @id @default(autoincrement())
+  clientId       Int           @map("client_id")
+  subscriptionId Int           @map("subscription_id")
+  visitDate      DateTime      @map("visit_date")
+  qrCode         String        @unique @map("qr_code")
+  isFreezeDay    Boolean       @default(false) @map("is_freeze_day")
+
+  // Связи
+  client         Client        @relation(fields: [clientId], references: [id])
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id])
+
+  @@map("visits")
+}
+
+// Товары
+model Product {
+  id          Int            @id @default(autoincrement())
+  name        String
+  description String
+  price       Decimal
+  photoUrl    String?       @map("photo_url")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@map("products")
+}
+
+// Новости и акции
+model News {
+  id          Int            @id @default(autoincrement())
+  title       String
+  content     String        @db.Text
+  photoUrl    String?       @map("photo_url")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@map("news")
+}
+
+// Рассылки
+model Notification {
+  id          Int            @id @default(autoincrement())
+  title       String
+  message     String        @db.Text
+  photoUrl    String?       @map("photo_url")
+  filterType  String        @map("filter_type")
+  sentAt      DateTime      @map("sent_at")
+
+  @@map("notifications")
+}
+
+// Жалобы и рекомендации
+model Feedback {
+  id          Int            @id @default(autoincrement())
+  clientId    Int           @map("client_id")
+  message     String        @db.Text
+  createdAt   DateTime      @default(now()) @map("created_at")
+
+  // Связи
+  client      Client        @relation(fields: [clientId], references: [id])
+
+  @@map("feedback")
+}
+
+// Контакты клуба
+model Contact {
+  id           Int            @id @default(autoincrement())
+  phone        String
+  address      String
+  socialLinks  Json          @map("social_links")
+  mapLink      String        @map("map_link")
+
+  @@map("contacts")
+}
+
+// Настройки
+model Setting {
+  id          Int            @id @default(autoincrement())
+  key         String        @unique
+  value       String        @db.Text
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
