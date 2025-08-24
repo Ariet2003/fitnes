@@ -15,12 +15,10 @@ model Client {
   phone        String        @unique
   photoUrl     String?       @map("photo_url")
   telegramId   String?       @unique @map("telegram_id")
-  tariffId     Int?         @map("tariff_id")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   // Связи
-  tariff       Tariff?       @relation(fields: [tariffId], references: [id])
   subscriptions Subscription[]
   visits       Visit[]
   feedback     Feedback[]
@@ -36,11 +34,12 @@ model Tariff {
   durationDays Int           @map("duration_days")
   duration     Int           @default(1) // срок действия тарифа в месяцах
   freezeLimit  Int           @map("freeze_limit")
+  startTime    String        @default("08:00") @map("start_time")
+  endTime      String        @default("13:00") @map("end_time")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   // Связи
-  clients      Client[]
   subscriptions Subscription[]
 
   @@map("tariffs")

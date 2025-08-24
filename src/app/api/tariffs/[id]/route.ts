@@ -22,8 +22,11 @@ export async function GET(
       include: {
         _count: {
           select: {
-            clients: true,
-            subscriptions: true
+            subscriptions: {
+              where: {
+                status: 'active'
+              }
+            }
           }
         }
       }
@@ -62,7 +65,7 @@ export async function PUT(
       );
     }
 
-    const { name, price, durationDays, duration, freezeLimit } = await request.json();
+    const { name, price, durationDays, duration, freezeLimit, startTime, endTime } = await request.json();
 
     // Проверяем существование тарифа
     const existingTariff = await prisma.tariff.findUnique({
@@ -100,13 +103,18 @@ export async function PUT(
         ...(price && { price: parseFloat(price) }),
         ...(durationDays && { durationDays: parseInt(durationDays) }),
         ...(duration && { duration: parseInt(duration) }),
-        ...(freezeLimit !== undefined && { freezeLimit: parseInt(freezeLimit) })
+        ...(freezeLimit !== undefined && { freezeLimit: parseInt(freezeLimit) }),
+        ...(startTime && { startTime }),
+        ...(endTime && { endTime })
       },
       include: {
         _count: {
           select: {
-            clients: true,
-            subscriptions: true
+            subscriptions: {
+              where: {
+                status: 'active'
+              }
+            }
           }
         }
       }
@@ -144,8 +152,11 @@ export async function DELETE(
       include: {
         _count: {
           select: {
-            clients: true,
-            subscriptions: true
+            subscriptions: {
+              where: {
+                status: 'active'
+              }
+            }
           }
         }
       }
@@ -159,9 +170,9 @@ export async function DELETE(
     }
 
     // Проверяем, есть ли связанные клиенты или подписки
-    if (existingTariff._count.clients > 0 || existingTariff._count.subscriptions > 0) {
+    if (existingTariff._count.subscriptions > 0) {
       return NextResponse.json(
-        { error: 'Нельзя удалить тариф, к которому привязаны клиенты или подписки' },
+        { error: 'Нельзя удалить тариф, к которому привязаны подписки' },
         { status: 409 }
       );
     }

@@ -77,6 +77,11 @@ export default function ClientsPage() {
     loadTariffs();
   }, [searchTerm, statusFilter, tariffFilter, sortBy, sortOrder, currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Функция для принудительной перезагрузки данных (без сброса фильтров)
+  const refreshData = () => {
+    loadClients();
+  };
+
   const loadClients = async () => {
     try {
       const params = new URLSearchParams({
@@ -136,13 +141,23 @@ export default function ClientsPage() {
   };
 
   const getStatusBadge = (client: Client) => {
-    const activeSubscription = client.subscriptions?.find(s => s.status === 'active');
+    // Получаем последнюю подписку (сортировка уже выполнена в API)
+    const lastSubscription = client.subscriptions?.[0];
     
-    if (!activeSubscription) {
+    if (!lastSubscription) {
       return <span className="px-2 py-1 text-xs rounded-full bg-red-900 text-red-300">Без абонемента</span>;
     }
     
-    const daysLeft = activeSubscription.remainingDays;
+    if (lastSubscription.status === 'completed') {
+      return <span className="px-2 py-1 text-xs rounded-full bg-gray-700 text-gray-300">Завершен</span>;
+    }
+
+    if (lastSubscription.status === 'frozen') {
+      return <span className="px-2 py-1 text-xs rounded-full bg-blue-900 text-blue-300">Заморожен</span>;
+    }
+    
+    // Для активных подписок проверяем оставшиеся дни
+    const daysLeft = lastSubscription.remainingDays;
     if (daysLeft <= 0) {
       return <span className="px-2 py-1 text-xs rounded-full bg-red-700 text-red-300">Истек</span>;
     } else if (daysLeft <= 3) {
@@ -233,7 +248,7 @@ export default function ClientsPage() {
               >
                 <option value="all">Все клиенты</option>
                 <option value="active">Активные</option>
-                <option value="inactive">Неактивные</option>
+                <option value="no_subscription">Без абонемента</option>
               </select>
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -501,41 +516,102 @@ export default function ClientsPage() {
 
       {/* Пагинация */}
       {totalPages > 1 && (
-        <div className="flex justify-center items-center space-x-2 mt-8">
-          <button
-            onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage === 1}
-            className="px-3 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
-          >
-            Назад
-          </button>
-          
-          <div className="flex space-x-1">
-            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-              const page = i + 1;
-              return (
-                <button
-                  key={page}
-                  onClick={() => setCurrentPage(page)}
-                  className={`px-3 py-2 rounded-lg transition-colors ${
-                    currentPage === page
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                  }`}
-                >
-                  {page}
-                </button>
-              );
-            })}
+        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 p-6 bg-gray-800/50 rounded-2xl border border-gray-700/50">
+          {/* Информация о странице */}
+          <div className="text-sm text-gray-400">
+            Страница <span className="text-white font-medium">{currentPage}</span> из{' '}
+            <span className="text-white font-medium">{totalPages}</span>
           </div>
 
-          <button
-            onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-            disabled={currentPage === totalPages}
-            className="px-3 py-2 bg-gray-700 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-600 transition-colors"
-          >
-            Далее
-          </button>
+          {/* Навигация */}
+          <div className="flex items-center space-x-2">
+            {/* Кнопка "Первая" */}
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-all disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+              title="Первая страница"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M20 19l-7-7 7-7" />
+              </svg>
+            </button>
+
+            {/* Кнопка "Назад" */}
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500"
+            >
+              Назад
+            </button>
+            
+            {/* Номера страниц */}
+            <div className="flex space-x-1">
+              {(() => {
+                const pages = [];
+                const start = Math.max(1, currentPage - 2);
+                const end = Math.min(totalPages, currentPage + 2);
+                
+                for (let i = start; i <= end; i++) {
+                  pages.push(
+                    <button
+                      key={i}
+                      onClick={() => setCurrentPage(i)}
+                      className={`w-10 h-10 rounded-xl font-medium transition-all ${
+                        currentPage === i
+                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-105'
+                          : 'text-gray-300 bg-gray-700/50 hover:bg-gray-600 hover:text-white border border-gray-600/50 hover:border-gray-500'
+                      }`}
+                    >
+                      {i}
+                    </button>
+                  );
+                }
+                
+                return pages;
+              })()}
+            </div>
+
+            {/* Кнопка "Далее" */}
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500"
+            >
+              Далее
+            </button>
+
+            {/* Кнопка "Последняя" */}
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-all disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+              title="Последняя страница"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M4 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Быстрый переход */}
+          <div className="flex items-center space-x-2 text-sm">
+            <span className="text-gray-400">Перейти к:</span>
+            <input
+              type="number"
+              min="1"
+              max={totalPages}
+              value={currentPage}
+              onChange={(e) => {
+                const page = parseInt(e.target.value);
+                if (page >= 1 && page <= totalPages) {
+                  setCurrentPage(page);
+                }
+              }}
+              className="w-16 px-2 py-1 bg-gray-700/50 border border-gray-600/50 rounded-lg text-white text-center focus:outline-none focus:border-blue-500 transition-colors"
+            />
+          </div>
         </div>
       )}
 
@@ -559,14 +635,17 @@ export default function ClientsPage() {
         isOpen={showAddForm}
         onClose={() => setShowAddForm(false)}
         tariffs={tariffs}
-        onClientAdded={loadClients}
+        onClientAdded={refreshData}
       />
       
       <ClientDetailsModal
         isOpen={showClientDetails}
-        onClose={() => setShowClientDetails(false)}
+        onClose={() => {
+          setShowClientDetails(false);
+          setSelectedClient(null);
+        }}
         clientId={selectedClient?.id || null}
-        onClientUpdated={loadClients}
+        onClientUpdated={refreshData}
       />
     </div>
   );

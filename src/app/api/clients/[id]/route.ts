@@ -13,7 +13,6 @@ export async function GET(
     const client = await prisma.client.findUnique({
       where: { id: clientId },
       include: {
-        tariff: true,
         subscriptions: {
           include: {
             tariff: true,
@@ -66,7 +65,7 @@ export async function PUT(
   try {
     const clientId = parseInt((await params).id);
     const body = await request.json();
-    const { fullName, phone, photoUrl, telegramId, tariffId } = body;
+    const { fullName, phone, photoUrl, telegramId } = body;
 
     // Проверяем существование клиента
     const existingClient = await prisma.client.findUnique({
@@ -128,11 +127,9 @@ export async function PUT(
         fullName,
         phone,
         photoUrl,
-        telegramId,
-        tariffId: tariffId ? parseInt(tariffId) : null
+        telegramId
       },
       include: {
-        tariff: true,
         subscriptions: {
           include: {
             tariff: true

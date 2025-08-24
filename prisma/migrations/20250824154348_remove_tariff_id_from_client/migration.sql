@@ -5,8 +5,6 @@ CREATE TABLE "public"."clients" (
     "phone" TEXT NOT NULL,
     "photo_url" TEXT,
     "telegram_id" TEXT,
-    "tariff_id" INTEGER,
-    "status" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 
@@ -19,6 +17,7 @@ CREATE TABLE "public"."tariffs" (
     "name" TEXT NOT NULL,
     "price" DECIMAL(65,30) NOT NULL,
     "duration_days" INTEGER NOT NULL,
+    "duration" INTEGER NOT NULL DEFAULT 1,
     "freeze_limit" INTEGER NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
@@ -134,9 +133,6 @@ CREATE UNIQUE INDEX "visits_qr_code_key" ON "public"."visits"("qr_code");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "settings_key_key" ON "public"."settings"("key");
-
--- AddForeignKey
-ALTER TABLE "public"."clients" ADD CONSTRAINT "clients_tariff_id_fkey" FOREIGN KEY ("tariff_id") REFERENCES "public"."tariffs"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "public"."subscriptions" ADD CONSTRAINT "subscriptions_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

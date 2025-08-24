@@ -9,8 +9,11 @@ export async function GET() {
       include: {
         _count: {
           select: {
-            clients: true,
-            subscriptions: true
+            subscriptions: {
+              where: {
+                status: 'active'
+              }
+            }
           }
         }
       }
@@ -29,7 +32,7 @@ export async function GET() {
 // POST - создать новый тариф
 export async function POST(request: NextRequest) {
   try {
-    const { name, price, durationDays, duration, freezeLimit } = await request.json();
+    const { name, price, durationDays, duration, freezeLimit, startTime, endTime } = await request.json();
 
     // Валидация обязательных полей
     if (!name || !price || !durationDays || !duration || freezeLimit === undefined) {
@@ -57,13 +60,18 @@ export async function POST(request: NextRequest) {
         price: parseFloat(price),
         durationDays: parseInt(durationDays),
         duration: parseInt(duration),
-        freezeLimit: parseInt(freezeLimit)
+        freezeLimit: parseInt(freezeLimit),
+        startTime: startTime || "08:00",
+        endTime: endTime || "13:00"
       },
       include: {
         _count: {
           select: {
-            clients: true,
-            subscriptions: true
+            subscriptions: {
+              where: {
+                status: 'active'
+              }
+            }
           }
         }
       }

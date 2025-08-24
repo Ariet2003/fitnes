@@ -6,7 +6,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search') || '';
-    // const status = searchParams.get('status'); // Убрано - поле status удалено из модели
+    const status = searchParams.get('status') || 'all';
     const tariffId = searchParams.get('tariffId');
     const allowedSortFields = ['createdAt', 'fullName', 'phone', 'updatedAt'];
     const requestedSortBy = searchParams.get('sortBy') || 'createdAt';
@@ -25,13 +25,56 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    // Убираем фильтр по статусу клиента, так как поле удалено
-    // if (status !== null && status !== 'all') {
-    //   where.status = status === 'active';
-    // }
+    // Фильтрация по статусу подписок
+    if (status && status !== 'all') {
+      if (status === 'active') {
+        where.subscriptions = {
+          some: {
+            status: 'active'
+          }
+        };
+      } else if (status === 'no_subscription') {
+        where.subscriptions = {
+          every: {
+            status: 'completed'
+          }
+        };
+      }
+    }
 
+    // Фильтрация по тарифу (только для активных подписок)
     if (tariffId) {
-      where.tariffId = parseInt(tariffId);
+      const subscriptionFilter = where.subscriptions as { some?: Record<string, unknown>; every?: Record<string, unknown> } | undefined;
+      
+      if (!subscriptionFilter) {
+        where.subscriptions = {
+          some: {
+            status: 'active',
+            tariffId: parseInt(tariffId)
+          }
+        };
+      } else if (subscriptionFilter.some) {
+        where.subscriptions = {
+          some: {
+            ...subscriptionFilter.some,
+            status: 'active',
+            tariffId: parseInt(tariffId)
+          }
+        };
+      } else if (subscriptionFilter.every) {
+        // Если был фильтр "без абонемента", добавляем условие OR
+        where.OR = [
+          { subscriptions: subscriptionFilter },
+          {
+            subscriptions: {
+              some: {
+                status: 'active',
+                tariffId: parseInt(tariffId)
+              }
+            }
+          }
+        ];
+      }
     }
 
     // Получаем клиентов с пагинацией
@@ -39,10 +82,10 @@ export async function GET(request: NextRequest) {
       prisma.client.findMany({
         where,
         include: {
-          tariff: true,
           subscriptions: {
-            where: { status: 'active' },
-            orderBy: { endDate: 'desc' },
+            orderBy: [
+              { createdAt: 'desc' }  // Получаем самую последнюю подписку
+            ],
             take: 1,
             include: {
               tariff: true
@@ -131,8 +174,7 @@ export async function POST(request: NextRequest) {
           fullName,
           phone,
           photoUrl,
-          telegramId,
-          tariffId: tariffId && tariffId !== '' ? parseInt(tariffId, 10) : null
+          telegramId
         }
       });
 
@@ -181,7 +223,6 @@ export async function POST(request: NextRequest) {
     const clientWithRelations = await prisma.client.findUnique({
       where: { id: result.id },
       include: {
-        tariff: true,
         subscriptions: {
           include: {
             tariff: true
