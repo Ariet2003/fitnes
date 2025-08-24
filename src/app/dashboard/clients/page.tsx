@@ -52,6 +52,7 @@ interface Tariff {
   name: string;
   price: number;
   durationDays: number;
+  duration: number; // срок действия в месяцах
   freezeLimit: number;
 }
 

@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fullName, phone, photoUrl, telegramId, tariffId } = body;
+    const { fullName, phone, photoUrl, telegramId, tariffId, startDate } = body;
 
     // Проверяем обязательные поля
     if (!fullName || !phone) {
@@ -144,17 +144,26 @@ export async function POST(request: NextRequest) {
         });
 
         if (tariff) {
-          // Создаем дату с учетом часового пояса +6 (Алматы/Бишкек)
-          const now = new Date();
-          const startDate = new Date(now.getTime() + (6 * 60 * 60 * 1000)); // +6 часов
-          const endDate = new Date(startDate);
-          endDate.setDate(startDate.getDate() + tariff.durationDays);
+          // Используем переданную дату старта или текущую дату с часовым поясом +6
+          let subscriptionStartDate: Date;
+          
+          if (startDate) {
+            // Если передана дата старта, используем её
+            subscriptionStartDate = new Date(startDate);
+          } else {
+            // Иначе используем текущую дату с учетом часового пояса +6 (Алматы/Бишкек)
+            const now = new Date();
+            subscriptionStartDate = new Date(now.getTime() + (6 * 60 * 60 * 1000)); // +6 часов
+          }
+          
+          const endDate = new Date(subscriptionStartDate);
+          endDate.setDate(subscriptionStartDate.getDate() + tariff.durationDays);
 
           await prisma.subscription.create({
             data: {
               clientId: client.id,
               tariffId: tariff.id,
-              startDate,
+              startDate: subscriptionStartDate,
               endDate,
               status: 'active',
               remainingDays: tariff.durationDays

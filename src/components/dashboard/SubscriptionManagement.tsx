@@ -1,15 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Clock, 
   Pause, 
   Play, 
   Plus, 
-  X, 
   CreditCard,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  X,
+  Calendar
 } from 'lucide-react';
 
 interface Subscription {
@@ -26,6 +27,15 @@ interface Subscription {
   };
 }
 
+interface Tariff {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
+  durationDays: number;
+  freezeLimit: number;
+}
+
 interface SubscriptionManagementProps {
   clientId: number;
   subscriptions: Subscription[];
@@ -33,13 +43,131 @@ interface SubscriptionManagementProps {
 }
 
 export default function SubscriptionManagement({ 
+  clientId,
   subscriptions, 
   onUpdate 
 }: SubscriptionManagementProps) {
   const [loading, setLoading] = useState<number | null>(null);
-  const [showExtendModal, setShowExtendModal] = useState<number | null>(null);
-  const [extendDays, setExtendDays] = useState('');
   const [error, setError] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [tariffs, setTariffs] = useState<Tariff[]>([]);
+  const [addFormData, setAddFormData] = useState({
+    tariffId: '',
+    startDate: new Date().toISOString().split('T')[0]
+  });
+  const [addLoading, setAddLoading] = useState(false);
+
+  // Загружаем тарифы при открытии модального окна
+  useEffect(() => {
+    if (showAddModal) {
+      loadTariffs();
+    }
+  }, [showAddModal]);
+
+  const loadTariffs = async () => {
+    try {
+      const response = await fetch('/api/tariffs');
+      if (response.ok) {
+        const data = await response.json();
+        setTariffs(data);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки тарифов:', error);
+    }
+  };
+
+  const openAddModal = () => {
+    setShowAddModal(true);
+    setAddFormData({
+      tariffId: '',
+      startDate: new Date().toISOString().split('T')[0]
+    });
+    setError('');
+  };
+
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setAddFormData({
+      tariffId: '',
+      startDate: new Date().toISOString().split('T')[0]
+    });
+    setError('');
+  };
+
+  const handleAddInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setAddFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const setQuickDate = (days: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    setAddFormData(prev => ({ ...prev, startDate: date.toISOString().split('T')[0] }));
+  };
+
+  const getSelectedTariff = () => {
+    return addFormData.tariffId ? tariffs.find(t => t.id === parseInt(addFormData.tariffId)) : null;
+  };
+
+  const calculateEndDate = () => {
+    const selectedTariff = getSelectedTariff();
+    if (!selectedTariff || !addFormData.startDate) return '';
+    
+    const startDate = new Date(addFormData.startDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + selectedTariff.durationDays);
+    
+    return endDate.toLocaleDateString('ru-RU');
+  };
+
+  const handleAddSubscription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!addFormData.tariffId) {
+      setError('Выберите тариф');
+      return;
+    }
+
+    try {
+      setAddLoading(true);
+      setError('');
+
+      const selectedTariff = getSelectedTariff();
+      if (!selectedTariff) return;
+
+      // Создаем подписку
+      const startDate = new Date(addFormData.startDate);
+      const endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + selectedTariff.durationDays);
+
+      const response = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          clientId,
+          tariffId: parseInt(addFormData.tariffId),
+          startDate: startDate.toISOString(),
+          endDate: endDate.toISOString(),
+          status: 'active',
+          remainingDays: selectedTariff.durationDays
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Ошибка при создании абонемента');
+      }
+
+      closeAddModal();
+      onUpdate();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка при создании абонемента');
+    } finally {
+      setAddLoading(false);
+    }
+  };
 
   const handleSubscriptionAction = async (subscriptionId: number, action: string, days?: number) => {
     setLoading(subscriptionId);
@@ -63,8 +191,6 @@ export default function SubscriptionManagement({
       }
 
       onUpdate();
-      setShowExtendModal(null);
-      setExtendDays('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Произошла ошибка');
     } finally {
@@ -119,10 +245,16 @@ export default function SubscriptionManagement({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-lg font-semibold text-white">Абонементы</h3>
-        <button className="flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm">
-          <Plus className="w-4 h-4 mr-1" />
-          Добавить
-        </button>
+        {/* Показываем кнопку "Добавить" только если нет активных абонементов */}
+        {!subscriptions.some(s => s.status === 'active') && (
+          <button 
+            onClick={openAddModal}
+            className="flex items-center px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            Добавить абонемент
+          </button>
+        )}
       </div>
 
       {error && (
@@ -189,26 +321,10 @@ export default function SubscriptionManagement({
                         {loading === subscription.id ? 'Заморозка...' : 'Заморозить'}
                       </button>
                     )}
-                    <button
-                      onClick={() => setShowExtendModal(subscription.id)}
-                      className="flex items-center px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs transition-colors"
-                    >
-                      <Plus className="w-3 h-3 mr-1" />
-                      Продлить
-                    </button>
                   </>
                 )}
 
-                {subscription.status === 'frozen' && (
-                  <button
-                    onClick={() => handleSubscriptionAction(subscription.id, 'unfreeze')}
-                    disabled={loading === subscription.id}
-                    className="flex items-center px-3 py-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded text-xs transition-colors"
-                  >
-                    <Play className="w-3 h-3 mr-1" />
-                    {loading === subscription.id ? 'Разморозка...' : 'Разморозить'}
-                  </button>
-                )}
+
 
                 {subscription.status === 'active' && (
                   <button
@@ -226,54 +342,124 @@ export default function SubscriptionManagement({
         </div>
       )}
 
-      {/* Модальное окно продления */}
-      {showExtendModal && (
-        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 rounded-lg p-6 max-w-sm w-full mx-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Продлить абонемент</h3>
+      {/* Modal для добавления абонемента */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 rounded-2xl w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b border-gray-700">
+              <h3 className="text-lg font-semibold text-white">Добавить абонемент</h3>
               <button
-                onClick={() => setShowExtendModal(null)}
-                className="text-gray-400 hover:text-white"
+                onClick={closeAddModal}
+                className="p-2 text-gray-400 hover:text-white transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Количество дней
-              </label>
-              <input
-                type="number"
-                value={extendDays}
-                onChange={(e) => setExtendDays(e.target.value)}
-                placeholder="Введите количество дней"
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
-                min="1"
-              />
-            </div>
+            <form onSubmit={handleAddSubscription} className="p-6 space-y-4">
+              {/* Выбор тарифа */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Тариф
+                </label>
+                <select
+                  name="tariffId"
+                  value={addFormData.tariffId}
+                  onChange={handleAddInputChange}
+                  className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  required
+                >
+                  <option value="">Выберите тариф</option>
+                  {tariffs.map(tariff => (
+                    <option key={tariff.id} value={tariff.id}>
+                      {tariff.name} - ₽{tariff.price} | {tariff.durationDays} дней | {tariff.duration} мес. | {tariff.freezeLimit} заморозок
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowExtendModal(null)}
-                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors"
-              >
-                Отмена
-              </button>
-              <button
-                onClick={() => {
-                  const days = parseInt(extendDays);
-                  if (days > 0) {
-                    handleSubscriptionAction(showExtendModal, 'extend', days);
-                  }
-                }}
-                disabled={!extendDays || parseInt(extendDays) <= 0}
-                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
-              >
-                Продлить
-              </button>
-            </div>
+              {/* Дата начала */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Calendar className="w-4 h-4 inline mr-1" />
+                  Дата начала
+                </label>
+                
+                {/* Быстрые кнопки */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate(0)}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                  >
+                    Сегодня
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate(1)}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                  >
+                    Завтра
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate(7)}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                  >
+                    +7 дней
+                  </button>
+                </div>
+
+                <input
+                  type="date"
+                  name="startDate"
+                  value={addFormData.startDate}
+                  onChange={handleAddInputChange}
+                  className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                  required
+                />
+
+                {/* Рассчитанная дата окончания */}
+                {calculateEndDate() && (
+                  <div className="mt-3 p-3 bg-green-900/30 border border-green-700 rounded-lg">
+                    <p className="text-green-300 text-sm">
+                      <span className="font-medium">Дата окончания:</span> {calculateEndDate()}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {error && (
+                <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                  <p className="text-red-300 text-sm">{error}</p>
+                </div>
+              )}
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={closeAddModal}
+                  disabled={addLoading}
+                  className="flex-1 px-4 py-2.5 bg-gray-600 hover:bg-gray-700 disabled:bg-gray-800 text-white rounded-lg transition-colors"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  disabled={addLoading}
+                  className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors flex items-center justify-center"
+                >
+                  {addLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Создание...
+                    </>
+                  ) : (
+                    'Создать абонемент'
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

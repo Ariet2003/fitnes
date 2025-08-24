@@ -10,6 +10,7 @@ interface Tariff {
   name: string;
   price: number;
   durationDays: number;
+  duration: number; // срок действия в месяцах
   freezeLimit: number;
 }
 
@@ -26,7 +27,8 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
     phone: '',
     telegramId: '',
     tariffId: '',
-    photoUrl: ''
+    photoUrl: '',
+    startDate: new Date().toISOString().split('T')[0] // сегодняшняя дата по умолчанию
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -72,6 +74,28 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     setError('');
+  };
+
+  // Функции для быстрого выбора даты
+  const setQuickDate = (days: number) => {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    setFormData(prev => ({ ...prev, startDate: date.toISOString().split('T')[0] }));
+  };
+
+  const getSelectedTariff = () => {
+    return formData.tariffId ? tariffs.find(t => t.id === parseInt(formData.tariffId)) : null;
+  };
+
+  const calculateEndDate = () => {
+    const selectedTariff = getSelectedTariff();
+    if (!selectedTariff || !formData.startDate) return '';
+    
+    const startDate = new Date(formData.startDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + selectedTariff.durationDays);
+    
+    return endDate.toLocaleDateString('ru-RU');
   };
 
   // Проверка уникальности телефона
@@ -293,7 +317,7 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
   };
 
   // Снятие фото
-  const takePhoto = () => {
+  const takePhoto = async () => {
     try {
       if (!videoRef.current || !canvasRef.current) {
         setError('Ошибка: элементы камеры не найдены');
@@ -327,7 +351,43 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
       
       if (imageData && imageData !== 'data:,') {
         setPreviewUrl(imageData);
-        setFormData(prev => ({ ...prev, photoUrl: imageData }));
+        
+        // Загружаем в S3
+        try {
+          setLoading(true);
+          
+          // Конвертируем dataURL в Blob
+          const response = await fetch(imageData);
+          const blob = await response.blob();
+          
+          // Создаем File объект
+          const file = new File([blob], `camera-photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+          
+          // Загружаем в S3
+          const formData = new FormData();
+          formData.append('file', file);
+
+          const uploadResponse = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          const data = await uploadResponse.json();
+
+          if (!uploadResponse.ok) {
+            throw new Error(data.error || 'Ошибка при загрузке фото');
+          }
+
+          // Сохраняем URL из S3
+          setFormData(prev => ({ ...prev, photoUrl: data.url }));
+          
+        } catch (uploadError) {
+          console.error('Ошибка загрузки фото в S3:', uploadError);
+          setError(uploadError instanceof Error ? uploadError.message : 'Ошибка при загрузке фото');
+        } finally {
+          setLoading(false);
+        }
+        
         closeCamera();
       } else {
         setError('Не удалось сделать фото. Попробуйте еще раз.');
@@ -339,17 +399,46 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
     }
   };
 
-  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // В реальном проекте здесь была бы загрузка на сервер
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const result = e.target?.result as string;
-        setPreviewUrl(result);
-        setFormData(prev => ({ ...prev, photoUrl: result }));
-      };
-      reader.readAsDataURL(file);
+      try {
+        setLoading(true);
+        setError('');
+
+        // Создаем preview локально
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setPreviewUrl(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+
+        // Загружаем файл в S3
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Ошибка при загрузке файла');
+        }
+
+        // Сохраняем URL из S3
+        setFormData(prev => ({ ...prev, photoUrl: data.url }));
+
+      } catch (error) {
+        console.error('Ошибка загрузки файла:', error);
+        setError(error instanceof Error ? error.message : 'Ошибка при загрузке файла');
+        setPreviewUrl('');
+        setFormData(prev => ({ ...prev, photoUrl: '' }));
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -411,7 +500,8 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
         phone: '',
         telegramId: '',
         tariffId: '',
-        photoUrl: ''
+        photoUrl: '',
+        startDate: new Date().toISOString().split('T')[0]
       });
       setPreviewUrl('');
       setPhoneError('');
@@ -706,12 +796,64 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
                 <option value="">Выберите тариф</option>
                 {tariffs.map(tariff => (
                   <option key={tariff.id} value={tariff.id}>
-                    {tariff.name} - ₽{tariff.price} ({tariff.durationDays} дней, {tariff.freezeLimit} заморозок)
+                    {tariff.name} - ₽{tariff.price} | {tariff.durationDays} дней | {tariff.duration} мес. | {tariff.freezeLimit} заморозок
                   </option>
                 ))}
               </select>
             </div>
           </div>
+
+          {/* Start Date - показываем только если выбран тариф */}
+          {formData.tariffId && (
+            <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-700/30">
+              <label className="block text-sm font-medium text-gray-300 mb-3">
+                Дата начала абонемента
+              </label>
+              
+              {/* Быстрые кнопки выбора даты */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setQuickDate(0)}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                >
+                  Сегодня
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickDate(1)}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                >
+                  Завтра
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuickDate(7)}
+                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm transition-colors"
+                >
+                  +7 дней
+                </button>
+              </div>
+
+              {/* Календарь выбора даты */}
+              <input
+                type="date"
+                name="startDate"
+                value={formData.startDate}
+                onChange={handleInputChange}
+                className="w-full px-3 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+              />
+
+              {/* Показ рассчитанной даты окончания */}
+              {calculateEndDate() && (
+                <div className="mt-3 p-3 bg-green-900/30 border border-green-700 rounded-lg">
+                  <p className="text-green-300 text-sm">
+                    <span className="font-medium">Дата окончания:</span> {calculateEndDate()}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Error Message */}
           {error && (

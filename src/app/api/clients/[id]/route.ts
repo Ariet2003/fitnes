@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { deleteFromS3 } from '@/lib/s3';
 
 // GET - получить клиента по ID
 export async function GET(
@@ -104,6 +105,19 @@ export async function PUT(
           { error: 'Клиент с таким Telegram ID уже существует' },
           { status: 409 }
         );
+      }
+    }
+
+    // Если обновляется фото и у клиента уже есть фото, удаляем старое из S3
+    if (photoUrl && existingClient.photoUrl && existingClient.photoUrl !== photoUrl) {
+      try {
+        // Проверяем, что старое фото находится в нашем S3
+        if (existingClient.photoUrl.includes('s3.twcstorage.ru')) {
+          await deleteFromS3(existingClient.photoUrl);
+        }
+      } catch (error) {
+        console.error('Ошибка при удалении старого фото из S3:', error);
+        // Не прерываем обновление клиента из-за ошибки удаления фото
       }
     }
 

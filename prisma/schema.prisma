@@ -34,6 +34,7 @@ model Tariff {
   name         String
   price        Decimal
   durationDays Int           @map("duration_days")
+  duration     Int           @default(1) // срок действия тарифа в месяцах
   freezeLimit  Int           @map("freeze_limit")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")

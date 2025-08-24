@@ -9,7 +9,8 @@ import {
   Megaphone, 
   BarChart3,
   Settings,
-  LogOut
+  LogOut,
+  Tag
 } from 'lucide-react';
 
 const menuItems = [
@@ -24,6 +25,12 @@ const menuItems = [
     href: '/dashboard/subscriptions',
     icon: CreditCard,
     description: 'Тарифы и подписки'
+  },
+  {
+    name: 'Тарифы',
+    href: '/dashboard/tariffs',
+    icon: Tag,
+    description: 'Управление тарифами'
   },
   {
     name: 'Магазин',

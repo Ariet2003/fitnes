@@ -75,9 +75,98 @@ export async function PUT(
             { status: 400 }
           );
         }
+
+        // Получаем информацию о клиенте для QR кода
+        const client = await prisma.client.findUnique({
+          where: { id: subscription.clientId },
+          select: { telegramId: true }
+        });
+
+        // Проверяем, есть ли уже запись на сегодня
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const existingVisit = await prisma.visit.findFirst({
+          where: {
+            clientId: subscription.clientId,
+            visitDate: {
+              gte: today,
+              lt: tomorrow
+            }
+          }
+        });
+
+        if (existingVisit) {
+          return NextResponse.json(
+            { error: 'Запись на сегодня уже существует' },
+            { status: 400 }
+          );
+        }
+        
+        // Создаем запись о заморозке в таблице Visit
+        const qrCode = client?.telegramId || `client_${subscription.clientId}`;
+        
+        await prisma.visit.create({
+          data: {
+            clientId: subscription.clientId,
+            subscriptionId: subscription.id,
+            visitDate: new Date(),
+            qrCode,
+            isFreezeDay: true
+          }
+        });
+        
+        // Увеличиваем счетчик заморозок, но НЕ меняем статус абонемента
         updateData = {
-          status: 'frozen',
           freezeUsed: subscription.freezeUsed + 1
+        };
+        break;
+
+      case 'unfreeze_day':
+        // Разморозка конкретного дня (удаление записи о заморозке)
+        const { visitId } = body;
+        
+        if (!visitId) {
+          return NextResponse.json(
+            { error: 'ID посещения не указан' },
+            { status: 400 }
+          );
+        }
+
+        // Находим запись о заморозке
+        const freezeVisit = await prisma.visit.findUnique({
+          where: { id: visitId }
+        });
+
+        if (!freezeVisit || !freezeVisit.isFreezeDay) {
+          return NextResponse.json(
+            { error: 'Запись о заморозке не найдена' },
+            { status: 404 }
+          );
+        }
+
+        // Проверяем, что это сегодняшний день
+        const visitDate = new Date(freezeVisit.visitDate);
+        const currentDate = new Date();
+        
+        // Проверяем только дату, игнорируя время
+        if (visitDate.toDateString() !== currentDate.toDateString()) {
+          return NextResponse.json(
+            { error: 'Разморозка возможна только в день заморозки' },
+            { status: 400 }
+          );
+        }
+
+        // Удаляем запись о заморозке
+        await prisma.visit.delete({
+          where: { id: visitId }
+        });
+
+        // Уменьшаем счетчик заморозок
+        updateData = {
+          freezeUsed: Math.max(0, subscription.freezeUsed - 1)
         };
         break;
 
