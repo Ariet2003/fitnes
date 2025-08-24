@@ -16,7 +16,6 @@ model Client {
   photoUrl     String?       @map("photo_url")
   telegramId   String?       @unique @map("telegram_id")
   tariffId     Int?         @map("tariff_id")
-  status       Boolean       @default(true)
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 

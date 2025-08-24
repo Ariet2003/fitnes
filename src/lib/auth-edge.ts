@@ -8,6 +8,7 @@ export interface SessionData {
   userId: string;
   login: string;
   createdAt: number;
+  [key: string]: unknown;
 }
 
 export async function createSessionTokenEdge(login: string): Promise<string> {
@@ -36,6 +37,17 @@ export async function verifySessionTokenEdge(token: string): Promise<SessionData
   }
 }
 
+// Функция для декодирования base64 в Edge Runtime
+function base64Decode(str: string): string {
+  // Добавляем padding если нужно
+  const padding = '='.repeat((4 - (str.length % 4)) % 4);
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/') + padding;
+  
+  // Декодируем base64
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 // Синхронная версия для middleware (упрощенная проверка)
 export function isValidSessionToken(token: string): boolean {
   try {
@@ -44,7 +56,7 @@ export function isValidSessionToken(token: string): boolean {
     if (parts.length !== 3) return false;
     
     // Декодируем payload без проверки подписи (только для базовой валидации)
-    const payload = JSON.parse(atob(parts[1]));
+    const payload = JSON.parse(base64Decode(parts[1]));
     
     // Проверяем обязательные поля
     if (!payload.userId || !payload.login || !payload.exp) return false;

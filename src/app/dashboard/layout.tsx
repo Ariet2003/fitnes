@@ -1,8 +1,9 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { verifySessionTokenEdge } from '@/lib/auth-edge';
+import DashboardLayout from '@/components/dashboard/DashboardLayout';
 
-export default async function DashboardLayout({
+export default async function Layout({
   children,
 }: {
   children: React.ReactNode;
@@ -20,8 +21,8 @@ export default async function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-900">
+    <DashboardLayout>
       {children}
-    </div>
+    </DashboardLayout>
   );
 }

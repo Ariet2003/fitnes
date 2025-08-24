@@ -1,35 +1,42 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { isValidSessionToken } from '@/lib/auth-edge';
+
+// Упрощенная проверка токена для middleware
+function isValidToken(token: string): boolean {
+  try {
+    // Простая проверка структуры JWT токена
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    
+    // Проверяем, что токен не пустой
+    if (!parts[0] || !parts[1] || !parts[2]) return false;
+    
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Получаем токен сессии
   const sessionToken = request.cookies.get('admin_session')?.value;
-  console.log('[MIDDLEWARE] Сырой токен:', sessionToken ? sessionToken.substring(0, 20) + '...' : 'отсутствует');
-  
-  const isAuthenticated = sessionToken ? isValidSessionToken(sessionToken) : false;
-
-  console.log('[MIDDLEWARE] Путь:', pathname, 'Токен:', !!sessionToken, 'Авторизован:', isAuthenticated);
+  const isAuthenticated = sessionToken ? isValidToken(sessionToken) : false;
 
   // Защищенные роуты
   if (pathname.startsWith('/dashboard')) {
     if (!isAuthenticated) {
-      console.log('[MIDDLEWARE] Неавторизованный доступ к дашборду, редирект на /');
       return NextResponse.redirect(new URL('/', request.url));
     }
-    console.log('[MIDDLEWARE] Авторизованный доступ к дашборду');
     return NextResponse.next();
   }
 
   // Редирект с главной если авторизован
   if (pathname === '/') {
     if (isAuthenticated) {
-      console.log('[MIDDLEWARE] Авторизован на главной, редирект на дашборд');
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
-    console.log('[MIDDLEWARE] Неавторизован на главной');
     return NextResponse.next();
   }
 
