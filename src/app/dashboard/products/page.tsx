@@ -8,8 +8,6 @@ import {
   Trash2, 
   ShoppingBag,
   Package,
-  Eye,
-  MoreVertical,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -17,7 +15,8 @@ import {
   ChevronUp,
   ChevronDown,
   ImageIcon,
-  Upload
+  X,
+  Maximize
 } from 'lucide-react';
 import Image from 'next/image';
 
@@ -26,15 +25,24 @@ interface Product {
   name: string;
   description: string;
   price: number;
-  photoUrl?: string;
+  photoUrl?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+interface UploadedFile {
+  url: string;
+  fileName: string;
+  originalName: string;
+  size: number;
+  type: string;
 }
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filtering, setFiltering] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -45,21 +53,42 @@ export default function ProductsPage() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    price: '',
-    photoUrl: ''
+    price: ''
   });
   const [error, setError] = useState('');
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [fullscreenData, setFullscreenData] = useState<{
+    images: string[];
+    currentIndex: number;
+    productName: string;
+  } | null>(null);
+  const [imageCarousels, setImageCarousels] = useState<{[key: number]: number}>({});
 
   const itemsPerPage = 12;
 
+  // Первоначальная загрузка
   useEffect(() => {
-    loadProducts();
+    loadProducts(true);
+  }, []);
+
+  // Фильтрация без полной перезагрузки
+  useEffect(() => {
+    if (!loading) { // Загружаем только если не идет первоначальная загрузка
+      loadProducts(false);
+    }
   }, [searchTerm, sortBy, sortOrder, currentPage]);
 
-  const loadProducts = async () => {
+  const loadProducts = async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      // Показываем полную загрузку только при первоначальной загрузке
+      if (isInitialLoad) {
+        setLoading(true);
+      } else {
+        setFiltering(true);
+      }
+
       const params = new URLSearchParams({
         search: searchTerm,
         sortBy,
@@ -92,6 +121,7 @@ export default function ProductsPage() {
       console.error('Ошибка загрузки продуктов:', error);
     } finally {
       setLoading(false);
+      setFiltering(false);
     }
   };
 
@@ -103,11 +133,118 @@ export default function ProductsPage() {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     setError('');
+  };
 
-    // Обновляем превью изображения
-    if (name === 'photoUrl') {
-      setImagePreview(value || null);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      console.log('📁 Выбраны файлы:', Array.from(files).map(f => f.name));
+      setSelectedFiles(files);
+      setError('');
+      
+      // Автоматически загружаем выбранные файлы
+      await uploadFiles(files);
+    } else {
+      console.log('❌ Файлы не выбраны');
     }
+  };
+
+  const removeUploadedImage = async (index: number) => {
+    const imageToRemove = uploadedImages[index];
+    if (imageToRemove && imageToRemove.url) {
+      // Удаляем файл из S3
+      try {
+        const response = await fetch('/api/upload', {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ fileUrl: imageToRemove.url }),
+        });
+        
+        if (!response.ok) {
+          console.error('Ошибка при удалении файла из S3');
+        }
+      } catch (error) {
+        console.error('Ошибка при удалении файла:', error);
+      }
+    }
+    
+    setUploadedImages(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const uploadFiles = async (files: FileList) => {
+    console.log(`📤 Начинаем автоматическую загрузку ${files.length} файлов`);
+    setUploading(true);
+    setError('');
+
+    try {
+      // Загружаем файлы по одному (как в AddClientModal)
+      const uploadedFiles: UploadedFile[] = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        
+        const formData = new FormData();
+        formData.append('file', file); // Используем 'file', как в AddClientModal
+        formData.append('folder', 'products');
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.error || `Ошибка при загрузке файла ${file.name}`);
+        }
+
+        // Добавляем загруженный файл
+        if (result.success && result.url) {
+          const uploadedFile = {
+            url: result.url,
+            fileName: result.fileName || file.name,
+            originalName: result.originalName || file.name,
+            size: result.size || file.size,
+            type: result.type || file.type
+          };
+          uploadedFiles.push(uploadedFile);
+          console.log('✅ Файл успешно обработан:', uploadedFile);
+        } else {
+          console.error('❌ Неожиданный формат ответа:', result);
+          throw new Error(`Неожиданный формат ответа для файла ${file.name}`);
+        }
+      }
+
+      // Добавляем все загруженные изображения
+      setUploadedImages(prev => {
+        const newImages = [...prev, ...uploadedFiles];
+        console.log('📸 Обновляем состояние изображений:', newImages);
+        return newImages;
+      });
+      
+      setSelectedFiles(null);
+      
+      // Очищаем input для возможности повторного выбора тех же файлов
+      const fileInput = document.getElementById('product-images') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+
+    } catch (error) {
+      console.error('Ошибка при загрузке изображений:', error);
+      setError(error instanceof Error ? error.message : 'Ошибка при загрузке изображений');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const uploadImages = async () => {
+    if (!selectedFiles || selectedFiles.length === 0) {
+      console.log('❌ Нет выбранных файлов для загрузки');
+      return;
+    }
+
+    await uploadFiles(selectedFiles);
   };
 
   const openCreateModal = () => {
@@ -115,11 +252,12 @@ export default function ProductsPage() {
     setFormData({
       name: '',
       description: '',
-      price: '',
-      photoUrl: ''
+      price: ''
     });
-    setImagePreview(null);
+    setSelectedFiles(null);
+    setUploadedImages([]);
     setError('');
+    console.log('🆕 Открываем модальное окно создания продукта');
     setShowModal(true);
   };
 
@@ -128,10 +266,39 @@ export default function ProductsPage() {
     setFormData({
       name: product.name,
       description: product.description,
-      price: product.price.toString(),
-      photoUrl: product.photoUrl || ''
+      price: product.price.toString()
     });
-    setImagePreview(product.photoUrl || null);
+    
+    // Парсим существующие изображения из JSON
+    let existingImages: UploadedFile[] = [];
+    if (product.photoUrl) {
+      try {
+        const urls = JSON.parse(product.photoUrl);
+        if (Array.isArray(urls)) {
+          existingImages = urls.map((url, index) => ({
+            url,
+            fileName: `image-${index + 1}`,
+            originalName: `Изображение ${index + 1}`,
+            size: 0,
+            type: 'image/jpeg'
+          }));
+        }
+      } catch (e) {
+        // Если это не JSON, значит старый формат с одним URL
+        if (product.photoUrl.trim()) {
+          existingImages = [{
+            url: product.photoUrl,
+            fileName: 'image-1',
+            originalName: 'Изображение 1',
+            size: 0,
+            type: 'image/jpeg'
+          }];
+        }
+      }
+    }
+    
+    setUploadedImages(existingImages);
+    setSelectedFiles(null);
     setError('');
     setShowModal(true);
   };
@@ -149,12 +316,19 @@ export default function ProductsPage() {
       return;
     }
 
+    // Собираем URL всех загруженных изображений
+    const photoUrls = uploadedImages.map(img => img.url);
+    console.log('🖼️ Загруженные изображения:', uploadedImages);
+    console.log('📋 URLs для отправки:', photoUrls);
+    
     const data = {
       name: formData.name.trim(),
       description: formData.description.trim(),
       price: parseFloat(formData.price),
-      photoUrl: formData.photoUrl.trim() || null
+      photoUrls: photoUrls
     };
+
+    console.log('📤 Отправляем данные на сервер:', data);
 
     try {
       const url = editingProduct ? `/api/products/${editingProduct.id}` : '/api/products';
@@ -175,8 +349,12 @@ export default function ProductsPage() {
       }
 
       setShowModal(false);
-      loadProducts();
+      
+      // Перезагружаем список продуктов
+      await loadProducts();
+      
     } catch (error) {
+      console.error('Ошибка при сохранении продукта:', error);
       setError(error instanceof Error ? error.message : 'Ошибка при сохранении продукта');
     }
   };
@@ -215,6 +393,93 @@ export default function ProductsPage() {
     return new Date(dateString).toLocaleDateString('ru-RU');
   };
 
+  const getProductImages = (product: Product): string[] => {
+    if (!product.photoUrl) return [];
+    
+    try {
+      const parsed = JSON.parse(product.photoUrl);
+      return Array.isArray(parsed) ? parsed : [product.photoUrl];
+    } catch (e) {
+      return [product.photoUrl];
+    }
+  };
+
+  const getCurrentImageIndex = (productId: number): number => {
+    return imageCarousels[productId] || 0;
+  };
+
+  const nextImage = (productId: number, totalImages: number) => {
+    setImageCarousels(prev => ({
+      ...prev,
+      [productId]: (getCurrentImageIndex(productId) + 1) % totalImages
+    }));
+  };
+
+  const prevImage = (productId: number, totalImages: number) => {
+    setImageCarousels(prev => ({
+      ...prev,
+      [productId]: (getCurrentImageIndex(productId) - 1 + totalImages) % totalImages
+    }));
+  };
+
+  const openFullscreen = (product: Product, imageIndex: number) => {
+    const images = getProductImages(product);
+    if (images.length > 0) {
+      setFullscreenData({
+        images,
+        currentIndex: imageIndex,
+        productName: product.name
+      });
+    }
+  };
+
+  const closeFullscreen = () => {
+    setFullscreenData(null);
+  };
+
+  const nextFullscreenImage = () => {
+    if (!fullscreenData) return;
+    setFullscreenData(prev => ({
+      ...prev!,
+      currentIndex: (prev!.currentIndex + 1) % prev!.images.length
+    }));
+  };
+
+  const prevFullscreenImage = () => {
+    if (!fullscreenData) return;
+    setFullscreenData(prev => ({
+      ...prev!,
+      currentIndex: (prev!.currentIndex - 1 + prev!.images.length) % prev!.images.length
+    }));
+  };
+
+  // Управление клавишами для полноэкранного просмотра
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!fullscreenData) return;
+      
+      switch (e.key) {
+        case 'Escape':
+          closeFullscreen();
+          break;
+        case 'ArrowLeft':
+          prevFullscreenImage();
+          break;
+        case 'ArrowRight':
+          nextFullscreenImage();
+          break;
+      }
+    };
+
+    if (fullscreenData) {
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [fullscreenData]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -236,7 +501,7 @@ export default function ProductsPage() {
             <span className="text-gray-400">
               Средняя цена: <span className="text-green-400 font-semibold">
                 {filteredProducts.length > 0 
-                  ? formatPrice(filteredProducts.reduce((sum, p) => sum + p.price, 0) / filteredProducts.length)
+                  ? formatPrice(filteredProducts.reduce((sum, p) => sum + parseFloat(p.price.toString()), 0) / filteredProducts.length)
                   : '₽0'
                 }
               </span>
@@ -308,49 +573,117 @@ export default function ProductsPage() {
       </div>
       
       {/* Сетка продуктов */}
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="relative">
+        {filtering && (
+          <div className="absolute top-0 left-0 right-0 bg-blue-500/10 border border-blue-500/20 rounded-xl p-3 mb-4 z-10">
+            <div className="flex items-center gap-2 text-blue-400">
+              <div className="w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>
+              Обновление списка...
+            </div>
+          </div>
+        )}
+        
+        <div className={`grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 ${filtering ? 'opacity-70 pointer-events-none' : ''}`}>
         {filteredProducts.map(product => (
           <div key={product.id} className="group relative bg-gradient-to-br from-gray-900/90 to-gray-800/90 backdrop-blur-sm border border-gray-700/50 rounded-3xl hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/10 transition-all duration-300">
             
-            {/* Изображение */}
-            <div className="relative h-48 mb-4 bg-gray-700/30 rounded-t-3xl overflow-hidden">
-              {product.photoUrl ? (
-                <Image
-                  src={product.photoUrl}
-                  alt={product.name}
-                  fill
-                  className="object-cover group-hover:scale-105 transition-transform duration-300"
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    target.style.display = 'none';
-                    const fallback = target.nextElementSibling as HTMLElement;
-                    if (fallback) fallback.style.display = 'flex';
-                  }}
-                />
-              ) : null}
+            {/* Изображения с каруселью */}
+            <div className="relative h-48 mb-4 bg-gray-700/30 rounded-t-3xl overflow-hidden group">
+              {(() => {
+                const images = getProductImages(product);
+                const currentIndex = getCurrentImageIndex(product.id);
+
+                if (images.length > 0) {
+                  return (
+                    <>
+                      {/* Основное изображение */}
+                      <div 
+                        className="relative w-full h-full cursor-pointer"
+                        onClick={() => openFullscreen(product, currentIndex)}
+                      >
+                        <Image
+                          src={images[currentIndex]}
+                          alt={product.name}
+                          fill
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const fallback = target.parentElement?.parentElement?.querySelector('.fallback') as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
+                        />
+                        
+                        {/* Кнопка полноэкранного просмотра */}
+                        <div className="absolute top-2 left-2 bg-black/70 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Maximize className="w-3 h-3" />
+                        </div>
+                      </div>
+
+                      {/* Навигация карусели */}
+                      {images.length > 1 && (
+                        <>
+                          {/* Кнопка назад */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              prevImage(product.id, images.length);
+                            }}
+                            className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black/70 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/90"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+
+                          {/* Кнопка вперед */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              nextImage(product.id, images.length);
+                            }}
+                            className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black/70 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/90"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+
+                          {/* Индикаторы */}
+                          <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
+                            {images.map((_, index) => (
+                              <button
+                                key={index}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setImageCarousels(prev => ({
+                                    ...prev,
+                                    [product.id]: index
+                                  }));
+                                }}
+                                className={`w-2 h-2 rounded-full transition-all ${
+                                  index === currentIndex 
+                                    ? 'bg-white' 
+                                    : 'bg-white/50 hover:bg-white/75'
+                                }`}
+                              />
+                            ))}
+                          </div>
+
+                          {/* Счетчик изображений */}
+                          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-lg">
+                            {currentIndex + 1}/{images.length}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  );
+                }
+                
+                return null;
+              })()}
+              
               <div 
-                className="absolute inset-0 flex items-center justify-center bg-gray-700/50 backdrop-blur-sm" 
+                className="fallback absolute inset-0 flex items-center justify-center bg-gray-700/50 backdrop-blur-sm" 
                 style={{ display: product.photoUrl ? 'none' : 'flex' }}
               >
                 <Package className="w-12 h-12 text-gray-400" />
-              </div>
-              
-              {/* Наложение с действиями */}
-              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center gap-2">
-                <button
-                  onClick={() => openEditModal(product)}
-                  className="p-2 bg-blue-600/80 hover:bg-blue-600 text-white rounded-lg transition-colors"
-                  title="Редактировать"
-                >
-                  <Edit3 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDelete(product)}
-                  className="p-2 bg-red-600/80 hover:bg-red-600 text-white rounded-lg transition-colors"
-                  title="Удалить"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
               </div>
             </div>
 
@@ -419,6 +752,7 @@ export default function ProductsPage() {
             </button>
           </div>
         )}
+        </div>
       </div>
 
       {/* Пагинация */}
@@ -557,35 +891,93 @@ export default function ProductsPage() {
                 />
               </div>
 
-              {/* URL изображения */}
+              {/* Загрузка изображений */}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">
-                  URL изображения
+                  Изображения продукта
                 </label>
-                <input
-                  type="url"
-                  name="photoUrl"
-                  value={formData.photoUrl}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
-                  placeholder="https://example.com/image.jpg"
-                />
                 
-                {/* Превью изображения */}
-                {imagePreview && (
-                  <div className="mt-3">
-                    <p className="text-sm text-gray-400 mb-2">Превью:</p>
-                    <div className="relative w-32 h-32 bg-gray-700 rounded-xl overflow-hidden">
-                      <Image
-                        src={imagePreview}
-                        alt="Превью"
-                        fill
-                        className="object-cover"
-                        onError={() => setImagePreview(null)}
-                      />
+                {/* Загруженные изображения */}
+                {uploadedImages.length > 0 && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-400 mb-2">Загруженные изображения ({uploadedImages.length}):</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {uploadedImages.map((img, index) => (
+                        <div key={index} className="relative group">
+                          <div className="relative w-full h-24 bg-gray-700 rounded-lg overflow-hidden border border-gray-600">
+                            <Image
+                              src={img.url}
+                              alt={img.originalName}
+                              fill
+                              className="object-cover group-hover:scale-105 transition-transform duration-200"
+                            />
+                            {/* Наложение при наведении */}
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
+                              <span className="text-white text-xs text-center px-2">
+                                {img.originalName}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeUploadedImage(index)}
+                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 hover:bg-red-700 text-white rounded-full text-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                            title="Удалить изображение"
+                          >
+                            ×
+                          </button>
+                          {/* Номер изображения */}
+                          <div className="absolute top-1 left-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                            {index + 1}
+                          </div>
+                        </div>
+                      ))}
                     </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Первое изображение будет использоваться как основное
+                    </p>
                   </div>
                 )}
+
+                {/* Выбор файлов */}
+                <div className="space-y-3">
+                  <input
+                    type="file"
+                    id="product-images"
+                    multiple
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                    disabled={uploading}
+                  />
+                  
+                  <label
+                    htmlFor="product-images"
+                    className={`flex items-center justify-center gap-2 px-4 py-3 border border-gray-600 rounded-xl transition-colors cursor-pointer ${
+                      uploading 
+                        ? 'bg-gray-700/50 border-gray-600/50 cursor-not-allowed' 
+                        : 'bg-gray-700 hover:bg-gray-600 text-white'
+                    }`}
+                  >
+                    {uploading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                        Загрузка изображений...
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-4 h-4" />
+                        {uploadedImages.length > 0 ? 'Добавить еще изображения' : 'Выбрать и загрузить изображения'}
+                      </>
+                    )}
+                  </label>
+
+                  <p className="text-xs text-gray-500">
+                    Можно выбрать до 10 изображений. Поддерживаемые форматы: JPEG, PNG, WebP, GIF. Максимальный размер файла: 5MB.
+                  </p>
+
+
+                </div>
               </div>
 
               {/* Ошибка */}
@@ -613,6 +1005,101 @@ export default function ProductsPage() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Полноэкранный просмотр изображения */}
+      {fullscreenData && (
+        <div className="fixed inset-0 bg-black/95 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="relative max-w-[90vw] max-h-[90vh] flex items-center justify-center">
+            {/* Кнопка назад (если больше одного изображения) */}
+            {fullscreenData.images.length > 1 && (
+              <button
+                onClick={prevFullscreenImage}
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white p-3 rounded-full transition-all z-10 backdrop-blur-sm"
+                title="Предыдущее изображение (←)"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Кнопка вперед (если больше одного изображения) */}
+            {fullscreenData.images.length > 1 && (
+              <button
+                onClick={nextFullscreenImage}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black/70 hover:bg-black/90 text-white p-3 rounded-full transition-all z-10 backdrop-blur-sm"
+                title="Следующее изображение (→)"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            )}
+
+            {/* Кнопка закрытия */}
+            <button
+              onClick={closeFullscreen}
+              className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors z-10"
+              title="Закрыть (Escape)"
+            >
+              <X className="w-8 h-8" />
+            </button>
+            
+            {/* Информация о товаре и счетчик */}
+            <div className="absolute -top-12 left-0 text-white z-10">
+              <h3 className="font-semibold text-lg mb-1">{fullscreenData.productName}</h3>
+              {fullscreenData.images.length > 1 && (
+                <div className="text-sm text-white/70">
+                  {fullscreenData.currentIndex + 1} из {fullscreenData.images.length}
+                </div>
+              )}
+            </div>
+            
+            {/* Изображение */}
+            <div className="relative">
+              <Image
+                src={fullscreenData.images[fullscreenData.currentIndex]}
+                alt={`${fullscreenData.productName} - изображение ${fullscreenData.currentIndex + 1}`}
+                width={800}
+                height={600}
+                className="max-w-full max-h-[90vh] object-contain rounded-lg"
+                onError={closeFullscreen}
+              />
+            </div>
+            
+            {/* Индикаторы (если больше одного изображения) */}
+            {fullscreenData.images.length > 1 && (
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 flex space-x-2">
+                {fullscreenData.images.map((_, index) => (
+                  <button
+                    key={index}
+                    onClick={() => setFullscreenData(prev => ({ ...prev!, currentIndex: index }))}
+                    className={`w-3 h-3 rounded-full transition-all ${
+                      index === fullscreenData.currentIndex 
+                        ? 'bg-white' 
+                        : 'bg-white/40 hover:bg-white/70'
+                    }`}
+                    title={`Перейти к изображению ${index + 1}`}
+                  />
+                ))}
+              </div>
+            )}
+            
+            {/* Подсказки */}
+            <div className="absolute -bottom-16 left-1/2 transform -translate-x-1/2 text-white/70 text-sm text-center">
+              {fullscreenData.images.length > 1 ? (
+                <div>
+                  <div>← → Навигация • Escape Закрыть • Клик по фону</div>
+                </div>
+              ) : (
+                <div>Escape или клик по фону для закрытия</div>
+              )}
+            </div>
+          </div>
+          
+          {/* Клик по фону для закрытия */}
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={closeFullscreen}
+          />
         </div>
       )}
     </div>

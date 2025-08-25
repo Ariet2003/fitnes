@@ -23,9 +23,10 @@ const BUCKET_NAME = process.env.PICTURES_TRIAL_TEST_BUCKET!;
 export async function uploadToS3(
   file: Buffer, 
   fileName: string, 
-  contentType: string
+  contentType: string,
+  folder: string = 'clients'
 ): Promise<string> {
-  const key = `clients/${Date.now()}-${fileName}`;
+  const key = `${folder}/${Date.now()}-${fileName}`;
   
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
@@ -57,9 +58,47 @@ export async function deleteFromS3(fileUrl: string): Promise<void> {
     });
 
     await s3Client.send(command);
+    console.log(`🗑️ Удален файл из S3: ${key}`);
   } catch (error) {
     console.error('Ошибка при удалении файла из S3:', error);
     throw error;
+  }
+}
+
+/**
+ * Удаляет множественные файлы из S3
+ * @param fileUrls - Массив URL файлов для удаления
+ */
+export async function deleteMultipleFromS3(fileUrls: string[]): Promise<void> {
+  if (!fileUrls || fileUrls.length === 0) return;
+  
+  console.log(`🗑️ Удаляем ${fileUrls.length} файлов из S3`);
+  
+  for (const fileUrl of fileUrls) {
+    try {
+      await deleteFromS3(fileUrl);
+    } catch (error) {
+      console.error(`Ошибка при удалении файла ${fileUrl}:`, error);
+      // Продолжаем удаление остальных файлов даже если один не удалился
+    }
+  }
+}
+
+/**
+ * Извлекает URLs из JSON строки photoUrl
+ * @param photoUrl - JSON строка с URL изображений или одиночный URL
+ * @returns Массив URL изображений
+ */
+export function extractImageUrls(photoUrl: string | null): string[] {
+  if (!photoUrl) return [];
+  
+  try {
+    // Пытаемся распарсить как JSON
+    const urls = JSON.parse(photoUrl);
+    return Array.isArray(urls) ? urls : [photoUrl];
+  } catch (e) {
+    // Если не JSON, значит это одиночный URL
+    return [photoUrl];
   }
 }
 

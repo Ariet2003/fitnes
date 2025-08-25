@@ -63,7 +63,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, description, price, photoUrl } = body;
+    const { name, description, price, photoUrls } = body;
+    console.log('📋 Получены данные продукта с', photoUrls?.length || 0, 'изображениями');
 
     // Валидация
     if (!name || !description || price === undefined) {
@@ -92,14 +93,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Валидируем и преобразуем массив изображений
+    let processedPhotoUrls = null;
+    
+    if (photoUrls && Array.isArray(photoUrls) && photoUrls.length > 0) {
+      // Фильтруем пустые URL и валидируем
+      const validUrls = photoUrls.filter(url => url && typeof url === 'string' && url.trim().length > 0);
+      
+      if (validUrls.length > 0) {
+        processedPhotoUrls = JSON.stringify(validUrls);
+        console.log(`💾 Сохраняем продукт "${name}" с ${validUrls.length} изображениями`);
+      }
+    } else {
+      console.log(`💾 Сохраняем продукт "${name}" без изображений`);
+    }
+
     const product = await prisma.product.create({
       data: {
         name: name.trim(),
         description: description.trim(),
         price: parseFloat(price.toString()),
-        photoUrl: photoUrl?.trim() || null
+        photoUrl: processedPhotoUrls
       }
     });
+
+    console.log(`✅ Продукт "${name}" успешно создан (ID: ${product.id})`);
 
     return NextResponse.json(product, { status: 201 });
 

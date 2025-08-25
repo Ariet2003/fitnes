@@ -15,10 +15,12 @@ model Client {
   phone        String        @unique
   photoUrl     String?       @map("photo_url")
   telegramId   String?       @unique @map("telegram_id")
+  tariffId     Int?         @map("tariff_id")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   // Связи
+  tariff       Tariff?       @relation(fields: [tariffId], references: [id])
   subscriptions Subscription[]
   visits       Visit[]
   feedback     Feedback[]
@@ -34,12 +36,11 @@ model Tariff {
   durationDays Int           @map("duration_days")
   duration     Int           @default(1) // срок действия тарифа в месяцах
   freezeLimit  Int           @map("freeze_limit")
-  startTime    String        @default("08:00") @map("start_time")
-  endTime      String        @default("13:00") @map("end_time")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   // Связи
+  clients      Client[]
   subscriptions Subscription[]
 
   @@map("tariffs")
@@ -95,7 +96,7 @@ model Product {
   @@map("products")
 }
 
-// Новости и акции
+// Сообщения для рассылок
 model News {
   id          Int            @id @default(autoincrement())
   title       String
@@ -104,19 +105,32 @@ model News {
   createdAt   DateTime      @default(now()) @map("created_at")
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
+  // Связи
+  sendResults SendResult[]
+
   @@map("news")
 }
 
-// Рассылки
-model Notification {
-  id          Int            @id @default(autoincrement())
-  title       String
-  message     String        @db.Text
-  photoUrl    String?       @map("photo_url")
-  filterType  String        @map("filter_type")
-  sentAt      DateTime      @map("sent_at")
+// Результаты рассылок
+model SendResult {
+  id               Int            @id @default(autoincrement())
+  newsId          Int           @map("news_id")
+  filterType      String        @map("filter_type")
+  filterParams    Json?         @map("filter_params")
+  totalRecipients Int           @map("total_recipients")
+  successCount    Int           @map("success_count")
+  failedCount     Int           @map("failed_count")
+  pendingCount    Int           @default(0) @map("pending_count")
+  status          String        @default("pending") // pending, in_progress, completed, failed
+  errorDetails    Json?         @map("error_details")
+  sentAt          DateTime      @map("sent_at")
+  completedAt     DateTime?     @map("completed_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
 
-  @@map("notifications")
+  // Связи
+  news            News          @relation(fields: [newsId], references: [id], onDelete: Cascade)
+
+  @@map("send_results")
 }
 
 // Жалобы и рекомендации

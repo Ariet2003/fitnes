@@ -21,12 +21,6 @@ const menuItems = [
     description: 'Управление клиентами'
   },
   {
-    name: 'Абонементы',
-    href: '/dashboard/subscriptions',
-    icon: CreditCard,
-    description: 'Тарифы и подписки'
-  },
-  {
     name: 'Тарифы',
     href: '/dashboard/tariffs',
     icon: Tag,
