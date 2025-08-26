@@ -62,7 +62,7 @@ export async function PUT(
       );
     }
 
-    const { name, price, durationDays, duration, freezeLimit } = await request.json();
+    const { name, price, durationDays, duration, freezeLimit, startTime, endTime } = await request.json();
 
     // Проверяем существование тарифа
     const existingTariff = await prisma.tariff.findUnique({
@@ -100,7 +100,9 @@ export async function PUT(
         ...(price && { price: parseFloat(price) }),
         ...(durationDays && { durationDays: parseInt(durationDays) }),
         ...(duration && { duration: parseInt(duration) }),
-        ...(freezeLimit !== undefined && { freezeLimit: parseInt(freezeLimit) })
+        ...(freezeLimit !== undefined && { freezeLimit: parseInt(freezeLimit) }),
+        ...(startTime && { startTime }),
+        ...(endTime && { endTime })
       },
       include: {
         _count: {

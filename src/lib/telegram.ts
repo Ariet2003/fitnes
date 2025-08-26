@@ -1,6 +1,8 @@
 // Утилиты для работы с Telegram API
 // Для использования необходимо создать бота через @BotFather и получить TOKEN
 
+import { prisma } from './prisma';
+
 interface TelegramMessage {
   chat_id: string;
   text: string;
@@ -16,12 +18,42 @@ interface TelegramResponse {
 }
 
 class TelegramService {
-  private botToken: string;
-  private baseUrl: string;
+  private botToken: string | null = null;
+  private baseUrl: string = '';
 
   constructor() {
-    this.botToken = process.env.TELEGRAM_BOT_TOKEN || '';
-    this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
+    // Токен будет загружен из БД при первом использовании
+  }
+
+  // Получение токена бота из базы данных
+  private async getBotToken(): Promise<string> {
+    if (this.botToken) {
+      return this.botToken;
+    }
+
+    try {
+      const setting = await prisma.setting.findUnique({
+        where: { key: 'admin_bot_token' }
+      });
+
+      if (!setting?.value) {
+        throw new Error('Токен Telegram бота не найден в настройках. Убедитесь, что настройка admin_bot_token существует в таблице Setting.');
+      }
+
+      this.botToken = setting.value;
+      this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
+      
+      return this.botToken;
+    } catch (error) {
+      console.error('Ошибка при получении токена Telegram бота из БД:', error);
+      throw error;
+    }
+  }
+
+  // Сброс кэшированного токена (для обновления настроек)
+  public clearTokenCache(): void {
+    this.botToken = null;
+    this.baseUrl = '';
   }
 
   // Отправка текстового сообщения
@@ -29,7 +61,9 @@ class TelegramService {
     parse_mode?: 'HTML' | 'Markdown';
     disable_web_page_preview?: boolean;
   }): Promise<TelegramResponse> {
-    if (!this.botToken) {
+    const botToken = await this.getBotToken();
+    
+    if (!botToken) {
       throw new Error('Telegram Bot Token не настроен');
     }
 
@@ -60,7 +94,9 @@ class TelegramService {
   async sendPhoto(chatId: string, photoUrl: string, caption?: string, options?: {
     parse_mode?: 'HTML' | 'Markdown';
   }): Promise<TelegramResponse> {
-    if (!this.botToken) {
+    const botToken = await this.getBotToken();
+    
+    if (!botToken) {
       throw new Error('Telegram Bot Token не настроен');
     }
 
@@ -175,11 +211,12 @@ class TelegramService {
 
   // Проверка валидности токена
   async validateToken(): Promise<boolean> {
-    if (!this.botToken) {
-      return false;
-    }
-
     try {
+      const botToken = await this.getBotToken();
+      if (!botToken) {
+        return false;
+      }
+
       const response = await fetch(`${this.baseUrl}/getMe`);
       const result = await response.json();
       return result.ok;
@@ -191,7 +228,9 @@ class TelegramService {
 
   // Получение информации о боте
   async getBotInfo(): Promise<any> {
-    if (!this.botToken) {
+    const botToken = await this.getBotToken();
+    
+    if (!botToken) {
       throw new Error('Telegram Bot Token не настроен');
     }
 
