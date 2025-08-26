@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ 
       success: true,
       message: 'Авторизация успешна',
-      redirect: '/dashboard'
+      redirect: '/dashboard/clients'
     });
 
     // Устанавливаем куки

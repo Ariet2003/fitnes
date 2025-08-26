@@ -35,9 +35,14 @@ export function middleware(request: NextRequest) {
   // Редирект с главной если авторизован
   if (pathname === '/') {
     if (isAuthenticated) {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
+      return NextResponse.redirect(new URL('/dashboard/clients', request.url));
     }
     return NextResponse.next();
+  }
+  
+  // Редирект с /dashboard на /dashboard/clients
+  if (pathname === '/dashboard') {
+    return NextResponse.redirect(new URL('/dashboard/clients', request.url));
   }
 
   return NextResponse.next();

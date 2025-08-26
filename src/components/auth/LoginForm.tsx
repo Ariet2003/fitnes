@@ -106,8 +106,8 @@ export default function LoginForm() {
         console.log('[CLIENT] Верификация успешна, выполняем редирект');
         // Делаем небольшую задержку для установки куков
         setTimeout(() => {
-          console.log('[CLIENT] Выполняем редирект на дашборд');
-          window.location.href = '/dashboard';
+          console.log('[CLIENT] Выполняем редирект на страницу клиентов');
+          window.location.href = '/dashboard/clients';
         }, 100);
       } else {
         throw new Error('Неожиданный ответ от сервера');

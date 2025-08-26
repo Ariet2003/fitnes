@@ -15,6 +15,7 @@ import {
 import Image from 'next/image';
 import AddClientModal from '@/components/dashboard/AddClientModal';
 import ClientDetailsModal from '@/components/dashboard/ClientDetailsModal';
+import ImageModal from '@/components/ui/ImageModal';
 
 interface Client {
   id: number;
@@ -70,6 +71,8 @@ export default function ClientsPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [showClientDetails, setShowClientDetails] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<{url: string, name: string} | null>(null);
 
   // Загрузка данных
   useEffect(() => {
@@ -138,6 +141,11 @@ export default function ClientsPage() {
     if (telegramId) {
       window.open(`https://t.me/${telegramId}`, '_blank');
     }
+  };
+
+  const handleImageClick = (imageUrl: string, clientName: string) => {
+    setSelectedImage({ url: imageUrl, name: clientName });
+    setShowImageModal(true);
   };
 
   const getStatusBadge = (client: Client) => {
@@ -213,9 +221,10 @@ export default function ClientsPage() {
             </span>
           </div>
         </div>
+        {/* Desktop add button */}
         <button
           onClick={() => setShowAddForm(true)}
-          className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg hover:shadow-xl"
+          className="hidden sm:flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg hover:shadow-xl"
         >
           <Plus className="w-4 h-4 mr-2" />
           Добавить клиента
@@ -224,7 +233,94 @@ export default function ClientsPage() {
 
       {/* Фильтры и поиск */}
       <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50 shadow-xl">
-        <div className="flex flex-col lg:flex-row gap-4">
+        {/* Mobile: Search and Add button on same row */}
+        <div className="flex gap-3 mb-4 sm:hidden">
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Поиск по имени..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            />
+          </div>
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="flex items-center px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg hover:shadow-xl"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Добавить
+          </button>
+        </div>
+
+        {/* Mobile: Filters in grid layout */}
+        <div className="grid grid-cols-1 gap-3 sm:hidden">
+          {/* Status filter */}
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="appearance-none w-full px-4 py-3 pr-10 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            >
+              <option value="all">Все клиенты</option>
+              <option value="active">Активные</option>
+              <option value="no_subscription">Без абонемента</option>
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Tariff filter */}
+          <div className="relative">
+            <select
+              value={tariffFilter}
+              onChange={(e) => setTariffFilter(e.target.value)}
+              className="appearance-none w-full px-4 py-3 pr-10 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            >
+              <option value="all">Все тарифы</option>
+              {tariffs.map(tariff => (
+                <option key={tariff.id} value={tariff.id.toString()}>
+                  {tariff.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Sort */}
+          <div className="relative">
+            <select
+              value={`${sortBy}-${sortOrder}`}
+              onChange={(e) => {
+                const [field, order] = e.target.value.split('-');
+                setSortBy(field);
+                setSortOrder(order);
+              }}
+              className="appearance-none w-full px-4 py-3 pr-10 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            >
+              <option value="createdAt-desc">Новые первыми</option>
+              <option value="createdAt-asc">Старые первыми</option>
+              <option value="fullName-asc">По имени (А-Я)</option>
+              <option value="fullName-desc">По имени (Я-А)</option>
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop layout (hidden on mobile) */}
+        <div className="hidden sm:flex flex-col lg:flex-row gap-4">
           {/* Поиск */}
           <div className="flex-1 relative">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -330,7 +426,8 @@ export default function ClientsPage() {
                         alt={client.fullName}
                         width={48}
                         height={48}
-                        className="w-12 h-12 rounded-full object-cover"
+                        className="w-12 h-12 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => handleImageClick(client.photoUrl!, client.fullName)}
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
@@ -426,7 +523,8 @@ export default function ClientsPage() {
                         alt={client.fullName}
                         width={40}
                         height={40}
-                        className="w-10 h-10 rounded-full object-cover"
+                        className="w-10 h-10 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => handleImageClick(client.photoUrl!, client.fullName)}
                         onError={(e) => {
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
@@ -516,101 +614,179 @@ export default function ClientsPage() {
 
       {/* Пагинация */}
       {totalPages > 1 && (
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-8 p-6 bg-gray-800/50 rounded-2xl border border-gray-700/50">
-          {/* Информация о странице */}
-          <div className="text-sm text-gray-400">
-            Страница <span className="text-white font-medium">{currentPage}</span> из{' '}
-            <span className="text-white font-medium">{totalPages}</span>
-          </div>
-
-          {/* Навигация */}
-          <div className="flex items-center space-x-2">
-            {/* Кнопка "Первая" */}
-            <button
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-all disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
-              title="Первая страница"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M20 19l-7-7 7-7" />
-              </svg>
-            </button>
-
-            {/* Кнопка "Назад" */}
-            <button
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-              className="px-4 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500"
-            >
-              Назад
-            </button>
+        <div className="mt-8 p-4 sm:p-6 bg-gray-800/50 rounded-2xl border border-gray-700/50">
+          {/* Mobile pagination */}
+          <div className="sm:hidden">
+            {/* Page info */}
+            <div className="text-sm text-gray-400 text-center mb-4">
+              Страница <span className="text-white font-medium">{currentPage}</span> из{' '}
+              <span className="text-white font-medium">{totalPages}</span>
+            </div>
             
-            {/* Номера страниц */}
-            <div className="flex space-x-1">
-              {(() => {
-                const pages = [];
-                const start = Math.max(1, currentPage - 2);
-                const end = Math.min(totalPages, currentPage + 2);
-                
-                for (let i = start; i <= end; i++) {
-                  pages.push(
-                    <button
-                      key={i}
-                      onClick={() => setCurrentPage(i)}
-                      className={`w-10 h-10 rounded-xl font-medium transition-all ${
-                        currentPage === i
-                          ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-105'
-                          : 'text-gray-300 bg-gray-700/50 hover:bg-gray-600 hover:text-white border border-gray-600/50 hover:border-gray-500'
-                      }`}
-                    >
-                      {i}
-                    </button>
-                  );
-                }
-                
-                return pages;
-              })()}
+            {/* Navigation buttons */}
+            <div className="flex justify-center items-center space-x-2">
+              {/* Previous button */}
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500 text-sm"
+              >
+                Назад
+              </button>
+              
+              {/* Page numbers (limited for mobile) */}
+              <div className="flex space-x-1">
+                {(() => {
+                  const pages = [];
+                  const start = Math.max(1, currentPage - 1);
+                  const end = Math.min(totalPages, currentPage + 1);
+                  
+                  for (let i = start; i <= end; i++) {
+                    pages.push(
+                      <button
+                        key={i}
+                        onClick={() => setCurrentPage(i)}
+                        className={`w-8 h-8 rounded-lg text-sm font-medium transition-all ${
+                          currentPage === i
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25'
+                            : 'text-gray-300 bg-gray-700/50 hover:bg-gray-600 hover:text-white border border-gray-600/50 hover:border-gray-500'
+                        }`}
+                      >
+                        {i}
+                      </button>
+                    );
+                  }
+                  
+                  return pages;
+                })()}
+              </div>
+
+              {/* Next button */}
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500 text-sm"
+              >
+                Далее
+              </button>
             </div>
 
-            {/* Кнопка "Далее" */}
-            <button
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-              className="px-4 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500"
-            >
-              Далее
-            </button>
-
-            {/* Кнопка "Последняя" */}
-            <button
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage === totalPages}
-              className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-all disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
-              title="Последняя страница"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M4 5l7 7-7 7" />
-              </svg>
-            </button>
+            {/* Quick jump for mobile */}
+            <div className="flex justify-center items-center space-x-2 text-sm mt-3">
+              <span className="text-gray-400">Перейти к:</span>
+              <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage}
+                onChange={(e) => {
+                  const page = parseInt(e.target.value);
+                  if (page >= 1 && page <= totalPages) {
+                    setCurrentPage(page);
+                  }
+                }}
+                className="w-12 px-2 py-1 bg-gray-700/50 border border-gray-600/50 rounded-lg text-white text-center focus:outline-none focus:border-blue-500 transition-colors text-xs"
+              />
+            </div>
           </div>
 
-          {/* Быстрый переход */}
-          <div className="flex items-center space-x-2 text-sm">
-            <span className="text-gray-400">Перейти к:</span>
-            <input
-              type="number"
-              min="1"
-              max={totalPages}
-              value={currentPage}
-              onChange={(e) => {
-                const page = parseInt(e.target.value);
-                if (page >= 1 && page <= totalPages) {
-                  setCurrentPage(page);
-                }
-              }}
-              className="w-16 px-2 py-1 bg-gray-700/50 border border-gray-600/50 rounded-lg text-white text-center focus:outline-none focus:border-blue-500 transition-colors"
-            />
+          {/* Desktop pagination (hidden on mobile) */}
+          <div className="hidden sm:flex flex-col sm:flex-row justify-between items-center gap-4">
+            {/* Информация о странице */}
+            <div className="text-sm text-gray-400">
+              Страница <span className="text-white font-medium">{currentPage}</span> из{' '}
+              <span className="text-white font-medium">{totalPages}</span>
+            </div>
+
+            {/* Навигация */}
+            <div className="flex items-center space-x-2">
+              {/* Кнопка "Первая" */}
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-all disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+                title="Первая страница"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M20 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              {/* Кнопка "Назад" */}
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className="px-4 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500"
+              >
+                Назад
+              </button>
+              
+              {/* Номера страниц */}
+              <div className="flex space-x-1">
+                {(() => {
+                  const pages = [];
+                  const start = Math.max(1, currentPage - 2);
+                  const end = Math.min(totalPages, currentPage + 2);
+                  
+                  for (let i = start; i <= end; i++) {
+                    pages.push(
+                      <button
+                        key={i}
+                        onClick={() => setCurrentPage(i)}
+                        className={`w-10 h-10 rounded-xl font-medium transition-all ${
+                          currentPage === i
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/25 scale-105'
+                            : 'text-gray-300 bg-gray-700/50 hover:bg-gray-600 hover:text-white border border-gray-600/50 hover:border-gray-500'
+                        }`}
+                      >
+                        {i}
+                      </button>
+                    );
+                  }
+                  
+                  return pages;
+                })()}
+              </div>
+
+              {/* Кнопка "Далее" */}
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 text-gray-300 bg-gray-700/50 hover:bg-gray-600 rounded-xl transition-all disabled:opacity-30 disabled:hover:bg-gray-700/50 border border-gray-600/50 hover:border-gray-500"
+              >
+                Далее
+              </button>
+
+              {/* Кнопка "Последняя" */}
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-xl transition-all disabled:opacity-30 disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+                title="Последняя страница"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M4 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Быстрый переход */}
+            <div className="flex items-center space-x-2 text-sm">
+              <span className="text-gray-400">Перейти к:</span>
+              <input
+                type="number"
+                min="1"
+                max={totalPages}
+                value={currentPage}
+                onChange={(e) => {
+                  const page = parseInt(e.target.value);
+                  if (page >= 1 && page <= totalPages) {
+                    setCurrentPage(page);
+                  }
+                }}
+                className="w-16 px-2 py-1 bg-gray-700/50 border border-gray-600/50 rounded-lg text-white text-center focus:outline-none focus:border-blue-500 transition-colors"
+              />
+            </div>
           </div>
         </div>
       )}
@@ -647,6 +823,20 @@ export default function ClientsPage() {
         clientId={selectedClient?.id || null}
         onClientUpdated={refreshData}
       />
+
+      {/* Модальное окно для просмотра изображений */}
+      {selectedImage && (
+        <ImageModal
+          isOpen={showImageModal}
+          onClose={() => {
+            setShowImageModal(false);
+            setSelectedImage(null);
+          }}
+          imageUrl={selectedImage.url}
+          altText={selectedImage.name}
+          title={`Фото клиента: ${selectedImage.name}`}
+        />
+      )}
     </div>
   );
 }

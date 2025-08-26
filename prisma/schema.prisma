@@ -15,12 +15,10 @@ model Client {
   phone        String        @unique
   photoUrl     String?       @map("photo_url")
   telegramId   String?       @unique @map("telegram_id")
-  tariffId     Int?         @map("tariff_id")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   // Связи
-  tariff       Tariff?       @relation(fields: [tariffId], references: [id])
   subscriptions Subscription[]
   visits       Visit[]
   feedback     Feedback[]
@@ -42,7 +40,6 @@ model Tariff {
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
   // Связи
-  clients      Client[]
   subscriptions Subscription[]
 
   @@map("tariffs")
@@ -135,15 +132,18 @@ model SendResult {
   @@map("send_results")
 }
 
-// Жалобы и рекомендации
 model Feedback {
-  id          Int            @id @default(autoincrement())
-  clientId    Int           @map("client_id")
-  message     String        @db.Text
-  createdAt   DateTime      @default(now()) @map("created_at")
+  id          Int        @id @default(autoincrement())
+  clientId    Int?       @map("client_id") // null если пишет админ
+  parentId    Int?       @map("parent_id") // ссылка на родительское сообщение
+  senderRole  String     @map("sender_role") // user, admin
+  message     String     @db.Text
+  createdAt   DateTime   @default(now()) @map("created_at")
 
   // Связи
-  client      Client        @relation(fields: [clientId], references: [id])
+  client      Client?     @relation(fields: [clientId], references: [id])
+  parent      Feedback?   @relation("FeedbackReplies", fields: [parentId], references: [id])
+  replies     Feedback[]  @relation("FeedbackReplies")
 
   @@map("feedback")
 }

@@ -8,9 +8,9 @@ import {
   ShoppingBag, 
   Megaphone, 
   BarChart3,
-  Settings,
   LogOut,
-  Tag
+  Tag,
+  Bell
 } from 'lucide-react';
 
 const menuItems = [
@@ -43,12 +43,6 @@ const menuItems = [
     href: '/dashboard/analytics',
     icon: BarChart3,
     description: 'Отчёты и статистика'
-  },
-  {
-    name: 'Настройки',
-    href: '/dashboard/settings',
-    icon: Settings,
-    description: 'Конфигурация системы'
   }
 ];
 

@@ -508,9 +508,10 @@ export default function ProductsPage() {
             </span>
           </div>
         </div>
+        {/* Desktop add button */}
         <button
           onClick={openCreateModal}
-          className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg hover:shadow-xl"
+          className="hidden sm:flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg hover:shadow-xl"
         >
           <Plus className="w-4 h-4 mr-2" />
           Добавить продукт
@@ -519,7 +520,60 @@ export default function ProductsPage() {
 
       {/* Фильтры и поиск */}
       <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl p-6 border border-gray-700/50 shadow-xl">
-        <div className="flex flex-col lg:flex-row gap-4">
+        {/* Mobile: Search and Add button on same row */}
+        <div className="flex gap-3 mb-4 sm:hidden">
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              placeholder="Поиск по названию..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-12 pr-4 py-3 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            />
+          </div>
+          <button
+            onClick={openCreateModal}
+            className="flex items-center px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors shadow-lg hover:shadow-xl"
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Добавить
+          </button>
+        </div>
+
+        {/* Mobile: Filter and sort buttons parallel */}
+        <div className="flex gap-3 sm:hidden">
+          <div className="flex-1 relative">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="appearance-none w-full px-4 py-3 pr-10 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            >
+              <option value="createdAt">По дате создания</option>
+              <option value="name">По названию</option>
+              <option value="price">По цене</option>
+              <option value="updatedAt">По обновлению</option>
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="px-4 py-3 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white hover:bg-gray-600/50 focus:outline-none focus:border-blue-500 transition-all flex items-center justify-center"
+          >
+            {sortOrder === 'asc' ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+
+        {/* Desktop layout (hidden on mobile) */}
+        <div className="hidden sm:flex flex-col lg:flex-row gap-4">
           {/* Поиск */}
           <div className="flex-1 relative">
             <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
@@ -833,17 +887,17 @@ export default function ProductsPage() {
       {/* Модальное окно */}
       {showModal && (
         <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-            <div className="p-6 border-b border-gray-700">
-              <h2 className="text-xl font-semibold text-white">
+          <div className="bg-gray-800 rounded-2xl w-full max-w-2xl max-h-[90vh] sm:max-h-[90vh] overflow-hidden">
+            <div className="p-4 sm:p-6 border-b border-gray-700">
+              <h2 className="text-lg sm:text-xl font-semibold text-white">
                 {editingProduct ? 'Редактировать продукт' : 'Новый продукт'}
               </h2>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto max-h-[calc(90vh-160px)]">
+            <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-3 sm:space-y-4 overflow-y-auto max-h-[calc(90vh-120px)] sm:max-h-[calc(90vh-160px)]">
               {/* Название */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Название продукта *
                 </label>
                 <input
@@ -851,7 +905,7 @@ export default function ProductsPage() {
                   name="name"
                   value={formData.name}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="Протеин Whey"
                   required
                 />
@@ -859,23 +913,23 @@ export default function ProductsPage() {
 
               {/* Описание */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Описание *
                 </label>
                 <textarea
                   name="description"
                   value={formData.description}
                   onChange={handleInputChange}
-                  rows={4}
-                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors resize-none"
-                  placeholder="Описание продукта, его преимущества и характеристики..."
+                  rows={3}
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors resize-none sm:rows-4"
+                  placeholder="Описание продукта..."
                   required
                 />
               </div>
 
               {/* Цена */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Цена (₽) *
                 </label>
                 <input
@@ -883,7 +937,7 @@ export default function ProductsPage() {
                   name="price"
                   value={formData.price}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 bg-gray-700 border border-gray-600 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 transition-colors"
                   placeholder="2990"
                   min="0"
                   step="0.01"
@@ -893,18 +947,18 @@ export default function ProductsPage() {
 
               {/* Загрузка изображений */}
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">
+                <label className="block text-sm font-medium text-gray-300 mb-1 sm:mb-2">
                   Изображения продукта
                 </label>
                 
                 {/* Загруженные изображения */}
                 {uploadedImages.length > 0 && (
-                  <div className="mb-4">
+                  <div className="mb-3 sm:mb-4">
                     <p className="text-sm text-gray-400 mb-2">Загруженные изображения ({uploadedImages.length}):</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 sm:grid-cols-3 gap-2 sm:gap-3">
                       {uploadedImages.map((img, index) => (
                         <div key={index} className="relative group">
-                          <div className="relative w-full h-24 bg-gray-700 rounded-lg overflow-hidden border border-gray-600">
+                          <div className="relative w-full h-16 sm:h-24 bg-gray-700 rounded-lg overflow-hidden border border-gray-600">
                             <Image
                               src={img.url}
                               alt={img.originalName}
@@ -913,7 +967,7 @@ export default function ProductsPage() {
                             />
                             {/* Наложение при наведении */}
                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center justify-center">
-                              <span className="text-white text-xs text-center px-2">
+                              <span className="text-white text-xs text-center px-1 sm:px-2">
                                 {img.originalName}
                               </span>
                             </div>
@@ -921,26 +975,26 @@ export default function ProductsPage() {
                           <button
                             type="button"
                             onClick={() => removeUploadedImage(index)}
-                            className="absolute -top-2 -right-2 w-6 h-6 bg-red-600 hover:bg-red-700 text-white rounded-full text-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                            className="absolute -top-1 sm:-top-2 -right-1 sm:-right-2 w-5 sm:w-6 h-5 sm:h-6 bg-red-600 hover:bg-red-700 text-white rounded-full text-xs sm:text-sm flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
                             title="Удалить изображение"
                           >
                             ×
                           </button>
                           {/* Номер изображения */}
-                          <div className="absolute top-1 left-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                          <div className="absolute top-0.5 sm:top-1 left-0.5 sm:left-1 bg-black/70 text-white text-xs px-1 sm:px-1.5 py-0.5 rounded">
                             {index + 1}
                           </div>
                         </div>
                       ))}
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">
+                    <p className="text-xs text-gray-500 mt-1 sm:mt-2">
                       Первое изображение будет использоваться как основное
                     </p>
                   </div>
                 )}
 
                 {/* Выбор файлов */}
-                <div className="space-y-3">
+                <div className="space-y-2 sm:space-y-3">
                   <input
                     type="file"
                     id="product-images"
@@ -953,7 +1007,7 @@ export default function ProductsPage() {
                   
                   <label
                     htmlFor="product-images"
-                    className={`flex items-center justify-center gap-2 px-4 py-3 border border-gray-600 rounded-xl transition-colors cursor-pointer ${
+                    className={`flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-3 border border-gray-600 rounded-xl transition-colors cursor-pointer ${
                       uploading 
                         ? 'bg-gray-700/50 border-gray-600/50 cursor-not-allowed' 
                         : 'bg-gray-700 hover:bg-gray-600 text-white'
@@ -962,18 +1016,20 @@ export default function ProductsPage() {
                     {uploading ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-                        Загрузка изображений...
+                        <span className="text-sm sm:text-base">Загрузка...</span>
                       </>
                     ) : (
                       <>
                         <ImageIcon className="w-4 h-4" />
-                        {uploadedImages.length > 0 ? 'Добавить еще изображения' : 'Выбрать и загрузить изображения'}
+                        <span className="text-sm sm:text-base">
+                          {uploadedImages.length > 0 ? 'Добавить еще' : 'Выбрать изображения'}
+                        </span>
                       </>
                     )}
                   </label>
 
                   <p className="text-xs text-gray-500">
-                    Можно выбрать до 10 изображений. Поддерживаемые форматы: JPEG, PNG, WebP, GIF. Максимальный размер файла: 5MB.
+                    До 10 изображений. JPEG, PNG, WebP, GIF. Макс. 5MB.
                   </p>
 
 
@@ -982,23 +1038,23 @@ export default function ProductsPage() {
 
               {/* Ошибка */}
               {error && (
-                <div className="p-4 bg-red-900/30 border border-red-700 rounded-xl">
+                <div className="p-3 sm:p-4 bg-red-900/30 border border-red-700 rounded-xl">
                   <p className="text-red-300 text-sm">{error}</p>
                 </div>
               )}
 
               {/* Кнопки */}
-              <div className="flex space-x-3 pt-4 border-t border-gray-700">
+              <div className="flex space-x-3 pt-3 sm:pt-4 border-t border-gray-700">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl transition-colors"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl transition-colors text-sm sm:text-base"
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
+                  className="flex-1 px-3 sm:px-4 py-2 sm:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors text-sm sm:text-base"
                 >
                   {editingProduct ? 'Сохранить' : 'Создать'}
                 </button>

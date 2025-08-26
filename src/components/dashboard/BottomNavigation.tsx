@@ -4,11 +4,10 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
   Users, 
-  CreditCard, 
   ShoppingBag, 
   Megaphone, 
   BarChart3,
-  Settings
+  Tag
 } from 'lucide-react';
 
 const menuItems = [
@@ -18,9 +17,9 @@ const menuItems = [
     icon: Users
   },
   {
-    name: 'Абонементы',
-    href: '/dashboard/subscriptions',
-    icon: CreditCard
+    name: 'Тарифы',
+    href: '/dashboard/tariffs',
+    icon: Tag
   },
   {
     name: 'Магазин',
@@ -36,11 +35,6 @@ const menuItems = [
     name: 'Аналитика',
     href: '/dashboard/analytics',
     icon: BarChart3
-  },
-  {
-    name: 'Настройки',
-    href: '/dashboard/settings',
-    icon: Settings
   }
 ];
 
@@ -76,11 +70,3 @@ export default function BottomNavigation() {
     </nav>
   );
 }
-
-
-
-
-
-
-
-

@@ -275,11 +275,6 @@ export async function GET(request: NextRequest) {
           select: {
             visits: true
           }
-        },
-        tariff: {
-          select: {
-            name: true
-          }
         }
       },
       orderBy: {
@@ -320,8 +315,7 @@ export async function GET(request: NextRequest) {
         topClients: topClients.map(client => ({
           id: client.id,
           fullName: client.fullName,
-          visits: client._count.visits,
-          tariff: client.tariff?.name || 'Без тарифа'
+          visits: client._count.visits
         }))
       },
       period

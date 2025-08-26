@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { usePathname } from 'next/navigation';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import BottomNavigation from './BottomNavigation';
@@ -11,6 +12,8 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+  const isNotificationsPage = pathname === '/dashboard/notifications';
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
@@ -19,6 +22,28 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const closeSidebar = () => {
     setSidebarOpen(false);
   };
+
+  if (isNotificationsPage) {
+    return (
+      <div className="h-screen bg-gray-900 overflow-hidden">
+        {/* Sidebar - только для десктопа */}
+        <div className="hidden lg:block">
+          <Sidebar isOpen={sidebarOpen} onClose={closeSidebar} />
+        </div>
+
+        {/* Header на всю ширину */}
+        <Header onToggleSidebar={toggleSidebar} />
+
+        {/* Bottom Navigation - только для мобильных */}
+        <BottomNavigation />
+
+        {/* Main content area для уведомлений - без отступов и прокрутки */}
+        <div className="lg:ml-[288px] xl:ml-[304px] pt-14 sm:pt-16 pb-16 lg:pb-0 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] lg:h-[calc(100vh-0rem)]">
+          {children}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900">

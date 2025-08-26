@@ -24,7 +24,7 @@ interface AnalyticsData {
     subscriptionStats: Array<{ status: string; count: number }>;
     revenueByMonth: Array<{ month: string; revenue: number; fullDate: string }>;
     visitsByWeekday: Array<{ day: string; visits: number }>;
-    topClients: Array<{ id: number; fullName: string; visits: number; tariff: string }>;
+    topClients: Array<{ id: number; fullName: string; visits: number }>;
   };
   period: string;
 }
@@ -107,8 +107,8 @@ export default function ExportManager({ data, period }: ExportManagerProps) {
 
       // Топ клиентов
       const topClientsData = [
-        ['Клиент', 'Тариф', 'Количество посещений'],
-        ...data.charts.topClients.map(item => [item.fullName, item.tariff, item.visits])
+        ['Клиент', 'Количество посещений'],
+        ...data.charts.topClients.map(item => [item.fullName, item.visits])
       ];
       const topClientsWS = XLSX.utils.aoa_to_sheet(topClientsData);
       XLSX.utils.book_append_sheet(wb, topClientsWS, 'Топ клиентов');

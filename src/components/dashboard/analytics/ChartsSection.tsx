@@ -12,7 +12,7 @@ interface ChartData {
   subscriptionStats: Array<{ status: string; count: number }>;
   revenueByMonth: Array<{ month: string; revenue: number; fullDate: string }>;
   visitsByWeekday: Array<{ day: string; visits: number }>;
-  topClients: Array<{ id: number; fullName: string; visits: number; tariff: string }>;
+  topClients: Array<{ id: number; fullName: string; visits: number }>;
 }
 
 interface ChartsSectionProps {
@@ -265,7 +265,6 @@ export default function ChartsSection({ data }: ChartsSectionProps) {
             <thead>
               <tr className="border-b border-gray-700">
                 <th className="text-left text-gray-300 font-medium p-2">Клиент</th>
-                <th className="text-left text-gray-300 font-medium p-2">Тариф</th>
                 <th className="text-right text-gray-300 font-medium p-2">Посещений</th>
               </tr>
             </thead>
@@ -288,7 +287,6 @@ export default function ChartsSection({ data }: ChartsSectionProps) {
                       <span className="text-white font-medium">{client.fullName}</span>
                     </div>
                   </td>
-                  <td className="p-2 text-gray-300">{client.tariff}</td>
                   <td className="p-2 text-right">
                     <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full text-sm font-medium">
                       {client.visits}

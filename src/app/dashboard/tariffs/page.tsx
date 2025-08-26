@@ -252,9 +252,10 @@ export default function TariffsPage() {
             Найдено: {filteredTariffs.length} из {tariffs.length}
           </p>
         </div>
+        {/* Desktop add button */}
         <button
           onClick={openCreateModal}
-          className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+          className="hidden sm:flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
         >
           <Plus className="w-4 h-4" />
           Добавить тариф
@@ -263,7 +264,61 @@ export default function TariffsPage() {
 
       {/* Search and Filters */}
       <div className="bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-4 lg:p-6">
-        <div className="grid gap-4 md:grid-cols-4">
+        {/* Mobile: Search and Add button on same row */}
+        <div className="flex gap-3 mb-4 sm:hidden">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder="Поиск по названию..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 bg-gray-800/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-blue-500/50 focus:bg-gray-800 transition-all"
+            />
+          </div>
+          <button
+            onClick={openCreateModal}
+            className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Добавить
+          </button>
+        </div>
+
+        {/* Mobile: Filter and sort buttons parallel */}
+        <div className="flex gap-3 mb-4 sm:hidden">
+          <div className="flex-1">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="w-full px-4 py-2.5 bg-gray-800/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:bg-gray-800 transition-all"
+            >
+              <option value="createdAt">По дате создания</option>
+              <option value="name">По названию</option>
+              <option value="price">По цене</option>
+              <option value="duration">По длительности</option>
+              <option value="subscriptions">По подпискам</option>
+            </select>
+          </div>
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="px-4 py-2.5 bg-gray-800/50 border border-gray-600/50 rounded-xl text-white hover:bg-gray-700/50 hover:border-blue-500/50 focus:outline-none focus:border-blue-500/50 transition-all flex items-center justify-center"
+          >
+            {sortOrder === 'asc' ? (
+              <ChevronUp className="w-4 h-4" />
+            ) : (
+              <ChevronDown className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+
+        {/* Mobile: Page info */}
+        <div className="text-sm text-gray-400 flex justify-center sm:hidden">
+          Страница {currentPage} из {totalPages}
+        </div>
+
+        {/* Desktop layout (hidden on mobile) */}
+        <div className="hidden sm:grid gap-4 md:grid-cols-4">
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />

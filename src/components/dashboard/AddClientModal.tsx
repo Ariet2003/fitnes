@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { X, User, Phone, MessageCircle, CreditCard, Camera } from 'lucide-react';
 import Image from 'next/image';
+import ImageModal from '../ui/ImageModal';
 // Динамический импорт для избежания проблем с SSR
 
 interface Tariff {
@@ -45,6 +46,7 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
   const [showCamera, setShowCamera] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [currentFacingMode, setCurrentFacingMode] = useState<'user' | 'environment'>('user');
+  const [showImageModal, setShowImageModal] = useState(false);
 
   // Типы для поддержки старых API камеры
   interface NavigatorWithDeprecatedMediaAPI extends Navigator {
@@ -647,7 +649,8 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
                   alt="Preview"
                   width={60}
                   height={60}
-                  className="w-16 h-16 rounded-full object-cover"
+                  className="w-16 h-16 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => setShowImageModal(true)}
                   onError={(e) => {
                     const target = e.target as HTMLImageElement;
                     target.style.display = 'none';
@@ -997,6 +1000,17 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
             </div>
           </div>
         </div>
+      )}
+
+      {/* Модальное окно для просмотра изображения */}
+      {previewUrl && (
+        <ImageModal
+          isOpen={showImageModal}
+          onClose={() => setShowImageModal(false)}
+          imageUrl={previewUrl}
+          altText="Предварительный просмотр фото"
+          title="Предварительный просмотр фото"
+        />
       )}
     </div>
   );

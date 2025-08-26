@@ -1,125 +1,34 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 
-// GET - получить статистику рассылок
 export async function GET() {
   try {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-    const [
-      totalNotifications,
-      monthlyNotifications,
-      weeklyNotifications,
-      totalClients,
-      clientsWithTelegram,
-      recentNews,
-      filterStats
-    ] = await Promise.all([
-      // Общее количество рассылок
-      prisma.notification.count(),
-      
-      // Рассылки за месяц
-      prisma.notification.count({
-        where: {
-          sentAt: { gte: startOfMonth }
-        }
-      }),
-      
-      // Рассылки за неделю
-      prisma.notification.count({
-        where: {
-          sentAt: { gte: startOfWeek }
-        }
-      }),
-      
-      // Общее количество клиентов
-      prisma.client.count(),
-      
-      // Клиенты с Telegram ID
-      prisma.client.count({
-        where: {
-          telegramId: { not: null }
-        }
-      }),
-      
-      // Последние новости
-      prisma.news.count({
-        where: {
-          createdAt: { gte: startOfWeek }
-        }
-      }),
-      
-      // Статистика по фильтрам
-      Promise.all([
-        prisma.client.count({
-          where: {
-            telegramId: { not: null },
-            subscriptions: {
-              some: {
-                status: 'active',
-                endDate: {
-                  gte: now,
-                  lte: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-                }
-              }
-            }
-          }
-        }),
-        prisma.client.count({
-          where: {
-            telegramId: { not: null },
-            createdAt: { gte: startOfWeek }
-          }
-        }),
-        prisma.client.count({
-          where: {
-            telegramId: { not: null },
-            subscriptions: {
-              some: {
-                status: 'frozen'
-              }
-            }
-          }
-        })
-      ])
-    ]);
-
-    const [expiringSoon, newClients, frozenSubscriptions] = filterStats;
-
-    const stats = {
-      notifications: {
-        total: totalNotifications,
-        monthly: monthlyNotifications,
-        weekly: weeklyNotifications
-      },
-      clients: {
-        total: totalClients,
-        withTelegram: clientsWithTelegram,
-        coverage: totalClients > 0 ? Math.round((clientsWithTelegram / totalClients) * 100) : 0
-      },
-      news: {
-        recentCount: recentNews
-      },
-      filters: {
-        expiringSoon,
-        newClients,
-        frozenSubscriptions
-      },
-      engagement: {
-        // Процент охвата Telegram
-        telegramCoverage: totalClients > 0 ? Math.round((clientsWithTelegram / totalClients) * 100) : 0,
-        // Активность рассылок
-        avgNotificationsPerWeek: weeklyNotifications
+    // Считаем количество сообщений от пользователей без ответа от админа
+    // Используем более эффективный запрос с LEFT JOIN
+    
+    const result = await prisma.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*) as count
+      FROM feedback f1
+      WHERE f1.sender_role = 'user'
+      AND NOT EXISTS (
+        SELECT 1 FROM feedback f2
+        WHERE f2.parent_id = f1.id
+        AND f2.sender_role = 'admin'
+      )
+    `;
+    
+    const totalNotifications = Number(result[0]?.count || 0);
+    
+    return NextResponse.json({
+      total: totalNotifications,
+      details: {
+        unansweredMessages: totalNotifications
       }
-    };
-
-    return NextResponse.json(stats);
+    });
   } catch (error) {
-    console.error('Ошибка при получении статистики:', error);
+    console.error('Ошибка получения статистики уведомлений:', error);
     return NextResponse.json(
-      { error: 'Ошибка при получении статистики' },
+      { error: 'Ошибка получения уведомлений' },
       { status: 500 }
     );
   }

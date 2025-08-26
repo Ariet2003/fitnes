@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import Image from 'next/image';
 import SubscriptionManagement from './SubscriptionManagement';
+import ImageModal from '../ui/ImageModal';
 
 interface ClientDetailsModalProps {
   isOpen: boolean;
@@ -88,6 +89,7 @@ export default function ClientDetailsModal({
   const [cameraOpen, setCameraOpen] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState('');
+  const [showImageModal, setShowImageModal] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -508,7 +510,8 @@ export default function ClientDetailsModal({
                 alt={client.fullName}
                 width={48}
                 height={48}
-                className="w-12 h-12 rounded-full object-cover"
+                className="w-12 h-12 rounded-full object-cover cursor-pointer hover:opacity-80 transition-opacity"
+                onClick={() => setShowImageModal(true)}
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
                   target.style.display = 'none';
@@ -1065,6 +1068,17 @@ export default function ClientDetailsModal({
             )}
           </div>
         </div>
+      )}
+
+      {/* Модальное окно для просмотра изображения */}
+      {client?.photoUrl && (
+        <ImageModal
+          isOpen={showImageModal}
+          onClose={() => setShowImageModal(false)}
+          imageUrl={client.photoUrl}
+          altText={client.fullName}
+          title={`Фото клиента: ${client.fullName}`}
+        />
       )}
     </div>
   );
