@@ -572,6 +572,7 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
         onClose={closeModal}
         scannedData={scanResult}
         onMarkVisit={handleMarkVisit}
+        telegramId={lastScanned}
       />
     </>
   );

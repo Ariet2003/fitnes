@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     if (currentTime < startTime || currentTime > endTime) {
       return NextResponse.json({
         success: false,
-        error: `Фитнес-клуб работает с ${activeSubscription.tariff.startTime} до ${activeSubscription.tariff.endTime}`,
+        error: `У вас доступ открыт с ${activeSubscription.tariff.startTime} до ${activeSubscription.tariff.endTime}`,
         errorType: 'OUTSIDE_WORKING_HOURS',
         client: {
           id: client.id,
@@ -111,7 +111,23 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    if (todayVisit) {
+    // Проверяем статус абонемента (заморожен ли)
+    const isFrozen = activeSubscription.status === 'frozen';
+    
+    // Проверяем, есть ли замороженное посещение на сегодня
+    const todayFrozenVisit = await prisma.visit.findFirst({
+      where: {
+        clientId: client.id,
+        subscriptionId: activeSubscription.id,
+        visitDate: {
+          gte: today,
+          lt: tomorrow
+        },
+        isFreezeDay: true
+      }
+    });
+
+    if (todayVisit && !todayFrozenVisit) {
       return NextResponse.json({
         success: false,
         error: 'Посещение на сегодня уже отмечено',
@@ -119,7 +135,17 @@ export async function POST(request: NextRequest) {
         client: {
           id: client.id,
           fullName: client.fullName,
-          phone: client.phone
+          phone: client.phone,
+          photoUrl: client.photoUrl
+        },
+        subscription: {
+          id: activeSubscription.id,
+          tariffName: activeSubscription.tariff.name,
+          endDate: activeSubscription.endDate,
+          remainingDays: activeSubscription.remainingDays,
+          freezeUsed: activeSubscription.freezeUsed,
+          freezeLimit: activeSubscription.tariff.freezeLimit,
+          status: activeSubscription.status
         },
         visitTime: todayVisit.visitDate
       });
@@ -138,8 +164,18 @@ export async function POST(request: NextRequest) {
         id: activeSubscription.id,
         tariffName: activeSubscription.tariff.name,
         endDate: activeSubscription.endDate,
-        remainingDays: activeSubscription.remainingDays
-      }
+        remainingDays: activeSubscription.remainingDays,
+        freezeUsed: activeSubscription.freezeUsed,
+        freezeLimit: activeSubscription.tariff.freezeLimit,
+        status: activeSubscription.status
+      },
+      workingHours: {
+        start: activeSubscription.tariff.startTime,
+        end: activeSubscription.tariff.endTime
+      },
+      canFreeze: activeSubscription.freezeUsed < activeSubscription.tariff.freezeLimit,
+      isFrozenToday: !!todayFrozenVisit,
+      canUnfreeze: !!todayFrozenVisit && currentTime < endTime
     });
 
   } catch (error) {
@@ -247,6 +283,133 @@ export async function PUT(request: NextRequest) {
 
   } catch (error) {
     console.error('Ошибка при создании посещения:', error);
+    return NextResponse.json(
+      { error: 'Внутренняя ошибка сервера' },
+      { status: 500 }
+    );
+  }
+}
+
+// Заморозка дня
+export async function PATCH(request: NextRequest) {
+  try {
+    const { telegramId, action } = await request.json();
+
+    if (!telegramId || !action) {
+      return NextResponse.json(
+        { error: 'Telegram ID и действие обязательны' },
+        { status: 400 }
+      );
+    }
+
+    const client = await prisma.client.findUnique({
+      where: { telegramId },
+      include: {
+        subscriptions: {
+          where: { status: 'active' },
+          include: { tariff: true },
+          orderBy: { endDate: 'desc' }
+        }
+      }
+    });
+
+    if (!client || !client.subscriptions[0]) {
+      return NextResponse.json(
+        { error: 'Клиент или абонемент не найден' },
+        { status: 400 }
+      );
+    }
+
+    const activeSubscription = client.subscriptions[0];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    if (action === 'freeze') {
+      // Проверяем лимит заморозки
+      if (activeSubscription.freezeUsed >= activeSubscription.tariff.freezeLimit) {
+        return NextResponse.json({
+          success: false,
+          error: 'Исчерпан лимит дней заморозки'
+        });
+      }
+
+      // Создаем запись заморозки
+      await prisma.visit.create({
+        data: {
+          clientId: client.id,
+          subscriptionId: activeSubscription.id,
+          visitDate: new Date(),
+          qrCode: telegramId,
+          isFreezeDay: true
+        }
+      });
+
+      // Увеличиваем счетчик использованных дней заморозки
+      await prisma.subscription.update({
+        where: { id: activeSubscription.id },
+        data: {
+          freezeUsed: {
+            increment: 1
+          }
+        }
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'День заморожен'
+      });
+
+    } else if (action === 'unfreeze') {
+      // Находим запись заморозки на сегодня
+      const frozenVisit = await prisma.visit.findFirst({
+        where: {
+          clientId: client.id,
+          subscriptionId: activeSubscription.id,
+          visitDate: {
+            gte: today,
+            lt: tomorrow
+          },
+          isFreezeDay: true
+        }
+      });
+
+      if (!frozenVisit) {
+        return NextResponse.json({
+          success: false,
+          error: 'Заморозка на сегодня не найдена'
+        });
+      }
+
+      // Удаляем запись заморозки
+      await prisma.visit.delete({
+        where: { id: frozenVisit.id }
+      });
+
+      // Уменьшаем счетчик использованных дней заморозки
+      await prisma.subscription.update({
+        where: { id: activeSubscription.id },
+        data: {
+          freezeUsed: {
+            decrement: 1
+          }
+        }
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Заморозка снята'
+      });
+    }
+
+    return NextResponse.json(
+      { error: 'Неизвестное действие' },
+      { status: 400 }
+    );
+
+  } catch (error) {
+    console.error('Ошибка при работе с заморозкой:', error);
     return NextResponse.json(
       { error: 'Внутренняя ошибка сервера' },
       { status: 500 }
