@@ -38,10 +38,24 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
       }
     };
 
+    // Тихая загрузка без индикаторов для автообновлений
+    const silentFetchNotifications = async () => {
+      try {
+        const response = await fetch('/api/notifications/stats');
+        if (response.ok) {
+          const data = await response.json();
+          setNotificationCount(data.total);
+        }
+      } catch (error) {
+        // Игнорируем ошибки при автообновлении
+      }
+    };
+
+    // Первая загрузка с индикатором
     fetchNotifications();
     
-    // Обновляем каждые 30 секунд
-    const interval = setInterval(fetchNotifications, 30000);
+    // Автообновление каждые 5 секунд (синхронно со списком чатов)
+    const interval = setInterval(silentFetchNotifications, 5000);
     return () => clearInterval(interval);
   }, []);
 

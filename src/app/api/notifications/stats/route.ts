@@ -3,26 +3,46 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    // Считаем количество сообщений от пользователей без ответа от админа
-    // Используем более эффективный запрос с LEFT JOIN
-    
-    const result = await prisma.$queryRaw<Array<{ count: number }>>`
-      SELECT COUNT(*) as count
-      FROM feedback f1
-      WHERE f1.sender_role = 'user'
-      AND NOT EXISTS (
-        SELECT 1 FROM feedback f2
-        WHERE f2.parent_id = f1.id
-        AND f2.sender_role = 'admin'
-      )
+    // Получаем все разговоры с клиентами
+    const baseConversations = await prisma.$queryRaw<Array<{
+      client_id: number;
+    }>>`
+      SELECT DISTINCT c.id as client_id
+      FROM clients c
+      JOIN feedback f ON c.id = f.client_id
     `;
+
+    // Считаем суммарное количество непрочитанных сообщений используя ту же логику, что и в conversations
+    let totalNotifications = 0;
     
-    const totalNotifications = Number(result[0]?.count || 0);
+    for (const conv of baseConversations) {
+      // Получаем последние сообщения клиента в хронологическом порядке
+      const recentMessages = await prisma.feedback.findMany({
+        where: { clientId: conv.client_id },
+        orderBy: { createdAt: 'desc' },
+        take: 50, // Берем последние 50 сообщений для анализа
+        select: { senderRole: true }
+      });
+
+      // Считаем последовательные сообщения пользователя с конца
+      let unreadCount = 0;
+      for (const message of recentMessages) {
+        if (message.senderRole === 'user') {
+          unreadCount++;
+        } else {
+          // Как только встретили сообщение админа - прекращаем счет
+          break;
+        }
+      }
+      
+      totalNotifications += unreadCount;
+    }
     
     return NextResponse.json({
       total: totalNotifications,
       details: {
-        unansweredMessages: totalNotifications
+        unreadMessages: totalNotifications,
+        conversationsCount: baseConversations.length
       }
     });
   } catch (error) {
