@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { deleteFromS3 } from '@/lib/s3';
+import { deleteQRCode, regenerateQRCode } from '@/lib/qr';
 
 // GET - получить клиента по ID
 export async function GET(
@@ -94,6 +95,7 @@ export async function PUT(
     }
 
     // Проверяем уникальность telegram_id (если он изменился)
+    let needQRRegeneration = false;
     if (telegramId && telegramId !== existingClient.telegramId) {
       const telegramExists = await prisma.client.findUnique({
         where: { telegramId }
@@ -105,6 +107,8 @@ export async function PUT(
           { status: 409 }
         );
       }
+      
+      needQRRegeneration = true;
     }
 
     // Если обновляется фото и у клиента уже есть фото, удаляем старое из S3
@@ -138,6 +142,17 @@ export async function PUT(
       }
     });
 
+    // Регенерируем QR-код если изменился telegramId
+    if (needQRRegeneration && telegramId) {
+      try {
+        await regenerateQRCode(clientId, telegramId);
+        console.log(`QR-код регенерирован для клиента ${clientId} с новым Telegram ID: ${telegramId}`);
+      } catch (error) {
+        console.error('Ошибка при регенерации QR-кода:', error);
+        // Не прерываем обновление клиента из-за ошибки с QR-кодом
+      }
+    }
+
     return NextResponse.json(updatedClient);
   } catch (error) {
     console.error('Ошибка при обновлении клиента:', error);
@@ -166,6 +181,24 @@ export async function DELETE(
         { error: 'Клиент не найден' },
         { status: 404 }
       );
+    }
+
+    // Удаляем QR-код из S3 если есть
+    try {
+      await deleteQRCode(clientId);
+    } catch (error) {
+      console.error('Ошибка при удалении QR-кода из S3:', error);
+      // Продолжаем удаление клиента даже если не получилось удалить QR-код
+    }
+
+    // Удаляем фото из S3 если есть
+    if (existingClient.photoUrl && existingClient.photoUrl.includes('s3.twcstorage.ru')) {
+      try {
+        await deleteFromS3(existingClient.photoUrl);
+      } catch (error) {
+        console.error('Ошибка при удалении фото из S3:', error);
+        // Продолжаем удаление клиента даже если не получилось удалить фото
+      }
     }
 
     // Удаляем клиента (каскадное удаление настроено в схеме)

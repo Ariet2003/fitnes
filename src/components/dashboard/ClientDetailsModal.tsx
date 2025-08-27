@@ -79,6 +79,9 @@ export default function ClientDetailsModal({
   const [activeTab, setActiveTab] = useState<'info' | 'subscriptions' | 'visits' | 'feedback'>('info');
   const [showConfirmDelete, setShowConfirmDelete] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string>('');
+  const [qrLoading, setQrLoading] = useState(false);
   const [editForm, setEditForm] = useState({
     fullName: '',
     phone: '',
@@ -476,6 +479,34 @@ export default function ClientDetailsModal({
     window.open(`https://t.me/${client.telegramId}`, '_blank');
   };
 
+  const handleQRCode = async () => {
+    if (!client) return;
+
+    if (!client.telegramId) {
+      alert('У клиента не указан Telegram ID');
+      return;
+    }
+
+    try {
+      setQrLoading(true);
+      
+      const response = await fetch(`/api/clients/${client.id}/qr`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка при получении QR-кода');
+      }
+
+      setQrUrl(data.qrUrl);
+      setShowQRModal(true);
+    } catch (error) {
+      console.error('Ошибка при получении QR-кода:', error);
+      alert(error instanceof Error ? error.message : 'Ошибка при получении QR-кода');
+    } finally {
+      setQrLoading(false);
+    }
+  };
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ru-RU', {
       day: '2-digit',
@@ -855,6 +886,25 @@ export default function ClientDetailsModal({
 
                       {/* Actions */}
                       <div className="flex space-x-3 pt-4 border-t border-gray-700">
+                        {client.telegramId && (
+                          <button
+                            onClick={handleQRCode}
+                            disabled={qrLoading}
+                            className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors"
+                          >
+                            {qrLoading ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                Загрузка...
+                              </>
+                            ) : (
+                              <>
+                                <QrCode className="w-4 h-4 mr-2" />
+                                QR-код
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           onClick={() => setShowConfirmDelete(true)}
                           className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
@@ -1079,6 +1129,61 @@ export default function ClientDetailsModal({
           altText={client.fullName}
           title={`Фото клиента: ${client.fullName}`}
         />
+      )}
+
+      {/* QR Code Modal */}
+      {showQRModal && qrUrl && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[60]">
+          <div className="bg-gray-800 rounded-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">QR-код для {client?.fullName}</h3>
+              <button
+                onClick={() => setShowQRModal(false)}
+                className="p-2 text-gray-400 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="text-center">
+              <div className="bg-white p-4 rounded-lg mb-4 inline-block">
+                <Image
+                  src={qrUrl}
+                  alt="QR Code"
+                  width={256}
+                  height={256}
+                  className="w-64 h-64"
+                />
+              </div>
+              <p className="text-gray-300 text-sm mb-4">
+                Telegram ID: {client?.telegramId}
+              </p>
+              <p className="text-gray-400 text-xs mb-4">
+                Отсканируйте этот QR-код для получения Telegram ID клиента
+              </p>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    const link = document.createElement('a');
+                    link.href = qrUrl;
+                    link.download = `qr-${client?.fullName}-${client?.telegramId}.png`;
+                    link.click();
+                  }}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                >
+                  Скачать
+                </button>
+                <button
+                  onClick={() => setShowQRModal(false)}
+                  className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  Закрыть
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

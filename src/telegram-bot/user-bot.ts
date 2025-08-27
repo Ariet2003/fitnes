@@ -1,5 +1,6 @@
 import TelegramBot, { Message, CallbackQuery } from 'node-telegram-bot-api';
 import { prisma } from '../lib/prisma';
+import { getOrCreateQRCode } from '../lib/qr';
 
 class UserTelegramBot {
   private bot: TelegramBot | null = null;
@@ -121,6 +122,9 @@ class UserTelegramBot {
             break;
           case 'feedback':
             await this.handleFeedback(chatId, telegramId);
+            break;
+          case 'feedback_refresh':
+            await this.handleFeedbackRefresh(chatId, telegramId);
             break;
           case 'contacts':
             await this.handleContacts(chatId);
@@ -327,7 +331,7 @@ class UserTelegramBot {
           inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
         };
 
-        await this.sendTextMessage(chatId, message, keyboard);
+        await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
         return;
       }
 
@@ -361,15 +365,15 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
         ]
       };
 
-      // Используем умную отправку текстового сообщения
-      await this.sendTextMessage(chatId, message, keyboard);
+      // Используем отправку/редактирование с приветственным фото
+      await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
     } catch (error) {
       console.error('Ошибка при получении информации об абонементе:', error);
       const errorMessage = '❌ Ошибка при получении информации об абонементе.';
-      const edited = await this.editLastMessage(chatId, errorMessage);
-      if (!edited) {
-        await this.sendMessage(chatId, errorMessage);
-      }
+      const keyboard = {
+        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      };
+      await this.sendOrEditWithWelcomePhoto(chatId, errorMessage, keyboard);
     }
   }
 
@@ -397,7 +401,7 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
           ]
         };
 
-        await this.sendTextMessage(chatId, message, keyboard);
+        await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
         return;
       }
 
@@ -424,65 +428,84 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
         ]
       };
 
-      await this.sendTextMessage(chatId, message, keyboard);
+      await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
     } catch (error) {
       console.error('Ошибка при получении истории абонементов:', error);
       const errorMessage = '❌ Ошибка при получении истории абонементов.';
-      const edited = await this.editLastMessage(chatId, errorMessage);
-      if (!edited) {
-        await this.sendMessage(chatId, errorMessage);
-      }
+      const keyboard = {
+        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      };
+      await this.sendOrEditWithWelcomePhoto(chatId, errorMessage, keyboard);
     }
   }
 
   // Обработка QR-кода
   private async handleQRCode(chatId: number, telegramId: string) {
     try {
+      // Ищем клиента по telegramId
       const client = await prisma.client.findUnique({
-        where: { telegramId: telegramId },
-        include: {
-          subscriptions: {
-            where: { status: 'active' },
-            orderBy: { createdAt: 'desc' }
-          }
-        }
+        where: { telegramId: telegramId }
       });
 
-      if (!client || client.subscriptions.length === 0) {
-        const message = '❌ У вас нет активных абонементов для получения QR-кода.';
+      if (!client) {
+        const message = '❌ Вы не зарегистрированы в системе. Обратитесь к администратору.';
         const keyboard = {
           inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
         };
 
-        await this.sendTextMessage(chatId, message, keyboard);
+        const edited = await this.editLastMessage(chatId, message, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, message, keyboard);
+        }
         return;
       }
 
-      // Генерируем QR-код для посещения
-      const qrCode = `QR_${client.id}_${Date.now()}`;
+      // Проверяем, есть ли уже QR-код в БД
+      const hasExistingQR = (client as any).qrCode && (client as any).qrCode !== 'qr';
       
-      const message = `📱 Ваш QR-код для посещения:
+      // Если QR-кода нет, показываем сообщение о генерации (редактируем текущее сообщение)
+      if (!hasExistingQR) {
+        const loadingMessage = '⏳ Генерируем ваш QR-код...';
+        const loadingKeyboard = {
+          inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+        };
+        
+        const edited = await this.editLastMessage(chatId, loadingMessage, loadingKeyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, loadingMessage, loadingKeyboard);
+        }
+      }
 
-\`${qrCode}\`
-
-Покажите этот код на ресепшене для прохода в зал.
-
-⏰ Код действителен в течение 24 часов.`;
+      // Получаем или создаем QR-код
+      const qrUrl = await getOrCreateQRCode(client.id);
+      
+      const message = `📱 Ваш QR-код для входа в фитнес-клуб`;
 
       const keyboard = {
         inline_keyboard: [
-          [{ text: '🔄 Обновить код', callback_data: 'qr_code' }],
           [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
         ]
       };
 
-      await this.sendTextMessage(chatId, message, keyboard);
-    } catch (error) {
-      console.error('Ошибка при генерации QR-кода:', error);
-      const errorMessage = '❌ Ошибка при генерации QR-кода.';
-      const edited = await this.editLastMessage(chatId, errorMessage);
+      // Редактируем сообщение, заменяя его на QR-код
+      const edited = await this.editLastMediaMessage(chatId, qrUrl, message, keyboard);
       if (!edited) {
-        await this.sendMessage(chatId, errorMessage);
+        // Если редактирование не удалось, отправляем новое сообщение
+        await this.sendPhoto(chatId, qrUrl, message, keyboard);
+      }
+
+    } catch (error) {
+      console.error('Ошибка при получении QR-кода:', error);
+      
+      const errorMessage = '❌ Ошибка при получении QR-кода. Попробуйте еще раз или обратитесь к администратору.';
+      const keyboard = {
+        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      };
+
+      // Пытаемся отредактировать последнее сообщение, если не получается - отправляем новое
+      const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+      if (!edited) {
+        await this.sendTextMessage(chatId, errorMessage, keyboard);
       }
     }
   }
@@ -500,7 +523,11 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
         const keyboard = {
           inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
         };
-        await this.sendTextMessage(chatId, message, keyboard);
+        
+        const edited = await this.editLastMessage(chatId, message, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, message, keyboard);
+        }
         return;
       }
 
@@ -521,7 +548,12 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
 
         // Включаем режим ввода отзыва
         this.feedbackMode.set(chatId, true);
-        await this.sendTextMessage(chatId, message, keyboard);
+        
+        // Используем редактирование сообщения вместо отправки нового
+        const edited = await this.editLastMessage(chatId, message, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, message, keyboard);
+        }
       } else {
         // Показываем историю сообщений
         await this.showFeedbackHistory(chatId, recentMessages);
@@ -532,7 +564,11 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
       const keyboard = {
         inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
       };
-      await this.sendTextMessage(chatId, errorMessage, keyboard);
+      
+      const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+      if (!edited) {
+        await this.sendTextMessage(chatId, errorMessage, keyboard);
+      }
     }
   }
 
@@ -622,16 +658,23 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
       historyText += `\n⏳ Ждите ответа...\n`;
     }
 
-    historyText += `\n📝 Чтобы оставить новый отзыв, просто напишите сообщение.\n`;
-    historyText += `🔄 Чтобы обновить историю, перезайдите в "Отзывы".`;
+    historyText += `\n📝 Чтобы оставить новый отзыв, просто напишите сообщение.`;
 
     const keyboard = {
-      inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      inline_keyboard: [
+        [{ text: '🔄 Обновить', callback_data: 'feedback_refresh' }],
+        [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
+      ]
     };
 
     // Включаем режим ввода нового отзыва
     this.feedbackMode.set(chatId, true);
-    await this.sendTextMessage(chatId, historyText, keyboard);
+    
+    // Используем редактирование сообщения вместо отправки нового
+    const edited = await this.editLastMessage(chatId, historyText, keyboard);
+    if (!edited) {
+      await this.sendTextMessage(chatId, historyText, keyboard);
+    }
   }
 
   // Показать историю отзывов с подтверждением отправки
@@ -673,11 +716,13 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
       historyText += `\n⏳ Ждите ответа...\n`;
     }
 
-    historyText += `\n📝 **Напишите еще одно сообщение** или вернитесь в меню.\n`;
-    historyText += `🔄 Чтобы обновить историю, перезайдите в "Отзывы".`;
+    historyText += `\n📝 **Напишите еще одно сообщение** или вернитесь в меню.`;
 
     const keyboard = {
-      inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      inline_keyboard: [
+        [{ text: '🔄 Обновить', callback_data: 'feedback_refresh' }],
+        [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
+      ]
     };
 
     // Режим ввода остается активным
@@ -685,6 +730,67 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
       parse_mode: 'Markdown',
       reply_markup: keyboard
     });
+  }
+
+  // Обработка обновления отзывов
+  private async handleFeedbackRefresh(chatId: number, telegramId: string) {
+    try {
+      // Получаем клиента по telegramId
+      const client = await prisma.client.findUnique({
+        where: { telegramId: telegramId }
+      });
+
+      if (!client) {
+        const message = '❌ Клиент не найден.';
+        const keyboard = {
+          inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+        };
+        
+        const edited = await this.editLastMessage(chatId, message, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, message, keyboard);
+        }
+        return;
+      }
+
+      // Получаем свежие сообщения из базы данных
+      const recentMessages = await this.getRecentFeedbackMessages(client.id);
+
+      if (recentMessages.length === 0) {
+        // Нет сообщений - показываем приглашение написать отзыв
+        const message = `💬 **Отзывы и рекомендации**
+
+Мы ценим ваше мнение! Поделитесь своими впечатлениями о нашем фитнес-центре или оставьте рекомендации для улучшения наших услуг.
+
+📝 Напишите ваше сообщение, и мы обязательно ответим!`;
+
+        const keyboard = {
+          inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+        };
+
+        // Включаем режим ввода отзыва
+        this.feedbackMode.set(chatId, true);
+        
+        const edited = await this.editLastMessage(chatId, message, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, message, keyboard);
+        }
+      } else {
+        // Показываем обновленную историю сообщений
+        await this.showFeedbackHistory(chatId, recentMessages);
+      }
+    } catch (error) {
+      console.error('Ошибка при обновлении отзывов:', error);
+      const errorMessage = '❌ Ошибка при обновлении отзывов.';
+      const keyboard = {
+        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      };
+      
+      const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+      if (!edited) {
+        await this.sendTextMessage(chatId, errorMessage, keyboard);
+      }
+    }
   }
 
   // Обработка нового сообщения отзыва
@@ -760,7 +866,7 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
           inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
         };
 
-        await this.sendTextMessage(chatId, message, keyboard);
+        await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
         return;
       }
 
@@ -806,10 +912,10 @@ ${socialText}`;
       if (totalContacts > 1) {
         const navButtons = [];
         if (currentIndex > 0) {
-          navButtons.push({ text: '⬅️ Предыдущий', callback_data: 'contacts_prev' });
+          navButtons.push({ text: '⬅️ Предыдущий филиал', callback_data: 'contacts_prev' });
         }
         if (currentIndex < totalContacts - 1) {
-          navButtons.push({ text: 'Следующий ➡️', callback_data: 'contacts_next' });
+          navButtons.push({ text: 'Следующий филиал ➡️', callback_data: 'contacts_next' });
         }
         if (navButtons.length > 0) {
           keyboard.inline_keyboard.push(navButtons);
@@ -819,14 +925,14 @@ ${socialText}`;
       // Кнопка "Назад в меню"
       keyboard.inline_keyboard.push([{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]);
 
-      await this.sendTextMessage(chatId, message, keyboard);
+      await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
     } catch (error) {
       console.error('Ошибка при получении контактов:', error);
       const errorMessage = '❌ Ошибка при получении контактной информации.';
-      const edited = await this.editLastMessage(chatId, errorMessage);
-      if (!edited) {
-        await this.sendMessage(chatId, errorMessage);
-      }
+      const keyboard = {
+        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      };
+      await this.sendOrEditWithWelcomePhoto(chatId, errorMessage, keyboard);
     }
   }
 
@@ -1025,6 +1131,27 @@ ${socialText}`;
     } catch (error) {
       console.error('Ошибка при получении URL приветственной картинки:', error);
       return null;
+    }
+  }
+
+  // Отправка или редактирование сообщения с фото из главного меню
+  private async sendOrEditWithWelcomePhoto(chatId: number, message: string, keyboard: any) {
+    const imageUrl = await this.getWelcomeImageUrl();
+    
+    if (imageUrl) {
+      // Пытаемся отредактировать существующее сообщение
+      const edited = await this.editLastMediaMessage(chatId, imageUrl, message, keyboard);
+      if (!edited) {
+        // Если редактирование не удалось, отправляем новое с фото
+        await this.sendPhoto(chatId, imageUrl, message, keyboard);
+      }
+    } else {
+      // Если фото нет, пытаемся отредактировать как текст
+      const edited = await this.editLastMessage(chatId, message, keyboard);
+      if (!edited) {
+        // Если редактирование не удалось, отправляем новое текстовое
+        await this.sendTextMessage(chatId, message, keyboard);
+      }
     }
   }
 

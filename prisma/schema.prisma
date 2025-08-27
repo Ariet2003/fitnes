@@ -15,6 +15,7 @@ model Client {
   phone        String        @unique
   photoUrl     String?       @map("photo_url")
   telegramId   String?       @unique @map("telegram_id")
+  qrCode       String?       @default("qr") @map("qr_code")
   createdAt    DateTime      @default(now()) @map("created_at")
   updatedAt    DateTime      @updatedAt @map("updated_at")
 
