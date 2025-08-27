@@ -34,7 +34,8 @@ interface ScanResult {
 }
 
 export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const hiddenVideoRef = useRef<HTMLVideoElement>(null); // Скрытое видео для сканирования
+  const previewVideoRef = useRef<HTMLVideoElement>(null); // Видимое видео для предварительного просмотра
   const codeReader = useRef<BrowserMultiFormatReader | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -46,7 +47,7 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
-  const controlsRef = useRef<any>();
+  const controlsRef = useRef<any>(null);
 
   // Инициализация сканера
   useEffect(() => {
@@ -56,28 +57,112 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     };
   }, []);
 
-  // Управление сканированием в зависимости от isEnabled и готовности компонента
+  // Управление сканированием в зависимости от isEnabled
   useEffect(() => {
-    if (isEnabled && codeReader.current && !isScanning && !isMinimized && videoRef.current) {
-      startScanning();
-    } else if (!isEnabled && isScanning) {
-      stopScanning();
-    }
-  }, [isEnabled, isScanning, isMinimized]);
-
-  // Запуск сканирования при разворачивании компонента
-  useEffect(() => {
-    if (!isMinimized && isEnabled && codeReader.current && !isScanning) {
-      // Небольшая задержка для рендеринга video элемента
+    if (isEnabled && codeReader.current && !isScanning) {
+      // Запрашиваем разрешение на уведомления
+      if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission().then(permission => {
+          console.log('Разрешение на уведомления:', permission);
+        });
+      }
+      
+      // Небольшая задержка для инициализации DOM
       const timer = setTimeout(() => {
-        if (videoRef.current) {
-          console.log('🚀 Запуск сканирования после разворачивания...');
+        if (hiddenVideoRef.current) {
+          console.log('🚀 Запуск фонового сканирования...');
           startScanning();
         }
       }, 100);
       return () => clearTimeout(timer);
+    } else if (!isEnabled && isScanning) {
+      stopScanning();
     }
-  }, [isMinimized, isEnabled]);
+  }, [isEnabled, isScanning]);
+
+  // Синхронизация видеопотока при разворачивании
+  useEffect(() => {
+    if (!isMinimized && isScanning) {
+      syncVideoStreams();
+    }
+  }, [isMinimized, isScanning]);
+
+  // Функция для привлечения внимания к вкладке
+  const focusTab = useCallback(() => {
+    try {
+      // 1. Фокусируем окно браузера
+      window.focus();
+      
+      // 2. Показываем уведомление браузера (если разрешено)
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('QR-код отсканирован!', {
+          body: 'Клиент найден. Требуется подтверждение посещения.',
+          icon: '/favicon.ico',
+          tag: 'qr-scan',
+          requireInteraction: true
+        });
+      }
+      
+      // 3. Меняем заголовок вкладки для привлечения внимания
+      const originalTitle = document.title;
+      let blinkCount = 0;
+      const blinkInterval = setInterval(() => {
+        document.title = blinkCount % 2 === 0 ? '🔴 QR СКАНИРОВАНИЕ!' : originalTitle;
+        blinkCount++;
+        if (blinkCount >= 10) { // Мигаем 5 раз
+          clearInterval(blinkInterval);
+          document.title = originalTitle;
+        }
+      }, 500);
+      
+      // 4. Воспроизводим звуковой сигнал
+      try {
+        // Создаем простой звуковой сигнал
+        const playNotificationSound = () => {
+          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          
+          // Первый тон
+          const oscillator1 = audioContext.createOscillator();
+          const gainNode1 = audioContext.createGain();
+          oscillator1.connect(gainNode1);
+          gainNode1.connect(audioContext.destination);
+          oscillator1.frequency.value = 800;
+          gainNode1.gain.setValueAtTime(0, audioContext.currentTime);
+          gainNode1.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01);
+          gainNode1.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
+          oscillator1.start(audioContext.currentTime);
+          oscillator1.stop(audioContext.currentTime + 0.2);
+          
+          // Второй тон (чуть позже)
+          const oscillator2 = audioContext.createOscillator();
+          const gainNode2 = audioContext.createGain();
+          oscillator2.connect(gainNode2);
+          gainNode2.connect(audioContext.destination);
+          oscillator2.frequency.value = 1000;
+          gainNode2.gain.setValueAtTime(0, audioContext.currentTime + 0.3);
+          gainNode2.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.31);
+          gainNode2.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5);
+          oscillator2.start(audioContext.currentTime + 0.3);
+          oscillator2.stop(audioContext.currentTime + 0.5);
+        };
+        
+        playNotificationSound();
+      } catch (audioError) {
+        console.warn('Не удалось воспроизвести звук:', audioError);
+        // Альтернативный метод - используем существующий звук браузера
+        try {
+          const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmY');
+          audio.volume = 0.1;
+          audio.play().catch(() => {});
+        } catch {
+          // Если и это не работает, просто игнорируем
+        }
+      }
+      
+    } catch (error) {
+      console.warn('Ошибка при попытке привлечь внимание:', error);
+    }
+  }, []);
 
   const validateAndProcessQR = useCallback(async (telegramId: string) => {
     try {
@@ -107,6 +192,9 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
       setScanResult(result);
       setShowVisitModal(true);
 
+      // Привлекаем внимание к вкладке
+      focusTab();
+
       // Паузим сканирование на время показа модального окна
       pauseScanning();
 
@@ -121,16 +209,21 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
         errorType: 'PROCESSING_ERROR'
       });
       setShowVisitModal(true);
+      
+      // Привлекаем внимание даже при ошибке
+      focusTab();
+      
       pauseScanning();
     }
-  }, [lastScanned, cooldown, onScanResult]);
+  }, [lastScanned, cooldown, onScanResult, focusTab]);
 
   const startScanning = async () => {
     console.log('🎥 Попытка запуска сканера...', {
       isEnabled,
       isMinimized,
       isScanning,
-      hasVideoRef: !!videoRef.current,
+      hasHiddenVideoRef: !!hiddenVideoRef.current,
+      hasPreviewVideoRef: !!previewVideoRef.current,
       hasCodeReader: !!codeReader.current
     });
     
@@ -140,16 +233,8 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
       return;
     }
     
-    if (isMinimized) {
-      console.warn('⚠️ Сканер свернут, пропускаем запуск');
-      return;
-    }
-    
-    if (!videoRef.current) {
-      console.error('❌ Video элемент не найден', {
-        isMinimized,
-        videoRef: videoRef.current
-      });
+    if (!hiddenVideoRef.current) {
+      console.error('❌ Скрытый video элемент не найден');
       setError('Ошибка видео элемента');
       return;
     }
@@ -174,11 +259,11 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
       console.log('✅ Доступ к камере получен');
       setHasPermission(true);
       
-      // Запускаем сканирование
+      // Запускаем сканирование на скрытом видео элементе
       console.log('🔍 Запуск сканирования...');
       controlsRef.current = await codeReader.current.decodeFromVideoDevice(
-        undefined,
-        videoRef.current,
+        null,
+        hiddenVideoRef.current,
         (result, error) => {
           if (result) {
             const scannedText = result.getText();
@@ -203,18 +288,18 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
       setIsScanning(true);
       setIsPaused(false);
       setIsInitializing(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Ошибка запуска сканера:', error);
       setHasPermission(false);
       
       // Более детальные сообщения об ошибках
-      if (error.name === 'NotAllowedError') {
+      if (error?.name === 'NotAllowedError') {
         setError('Доступ к камере запрещен. Разрешите доступ в настройках браузера');
-      } else if (error.name === 'NotFoundError') {
+      } else if (error?.name === 'NotFoundError') {
         setError('Камера не найдена. Проверьте подключение камеры');
-      } else if (error.name === 'NotSupportedError') {
+      } else if (error?.name === 'NotSupportedError') {
         setError('Камера не поддерживается вашим браузером');
-      } else if (error.message) {
+      } else if (error?.message) {
         setError(error.message);
       } else {
         setError('Не удалось получить доступ к камере');
@@ -235,16 +320,32 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
   };
 
   const pauseScanning = () => {
-    if (videoRef.current) {
-      videoRef.current.pause();
-      setIsPaused(true);
+    console.log('⏸️ Пауза сканирования...');
+    if (hiddenVideoRef.current) {
+      hiddenVideoRef.current.pause();
     }
+    if (previewVideoRef.current) {
+      previewVideoRef.current.pause();
+    }
+    setIsPaused(true);
   };
 
   const resumeScanning = () => {
-    if (videoRef.current) {
-      videoRef.current.play();
-      setIsPaused(false);
+    console.log('▶️ Возобновление сканирования...');
+    if (hiddenVideoRef.current) {
+      hiddenVideoRef.current.play();
+    }
+    if (previewVideoRef.current) {
+      previewVideoRef.current.play();
+    }
+    setIsPaused(false);
+  };
+
+  // Синхронизация видеопотока между скрытым и видимым видео
+  const syncVideoStreams = () => {
+    if (hiddenVideoRef.current && previewVideoRef.current && hiddenVideoRef.current.srcObject) {
+      previewVideoRef.current.srcObject = hiddenVideoRef.current.srcObject;
+      previewVideoRef.current.play().catch(console.warn);
     }
   };
 
@@ -336,11 +437,16 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
               onClick={() => {
                 console.log('📱 Разворачивание QR-сканера...');
                 setIsMinimized(false);
+                // Синхронизируем видеопоток после разворачивания
+                setTimeout(syncVideoStreams, 100);
               }}
               className="w-16 h-16 flex items-center justify-center text-white hover:bg-gray-700 transition-colors"
               title="Развернуть QR-сканер"
             >
               <Camera className="w-6 h-6" />
+              {isScanning && (
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              )}
             </button>
           ) : (
             /* Развернутое состояние */
@@ -364,14 +470,12 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
                   </button>
                   <button
                     onClick={() => {
-                      console.log('📦 Сворачивание QR-сканера...');
+                      console.log('📦 Сворачивание QR-сканера (сканирование продолжается в фоне)...');
                       setIsMinimized(true);
-                      if (isScanning) {
-                        pauseScanning();
-                      }
+                      // НЕ останавливаем сканирование - оно продолжается в фоне
                     }}
                     className="p-1 text-gray-300 hover:text-white transition-colors"
-                    title="Свернуть"
+                    title="Свернуть (сканирование продолжится в фоне)"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -381,8 +485,9 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
               {/* Видео */}
               <div className="relative">
                 <video
-                  ref={videoRef}
+                  ref={previewVideoRef}
                   className="w-full h-48 object-cover"
+                  style={{ transform: 'scaleX(1)' }}
                   autoPlay
                   muted
                   playsInline
@@ -390,8 +495,18 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
                 
                 {/* Overlay для рамки сканирования */}
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-32 h-32 border-2 border-green-500 border-dashed rounded-lg bg-green-500 bg-opacity-10">
-                    <div className="w-full h-full border border-green-300 rounded-lg"></div>
+                  <div className="w-32 h-32 border-2 border-green-500 border-dashed rounded-lg">
+                    {/* Угловые маркеры для лучшей видимости */}
+                    <div className="relative w-full h-full">
+                      {/* Верхний левый угол */}
+                      <div className="absolute top-0 left-0 w-4 h-4 border-l-2 border-t-2 border-green-400"></div>
+                      {/* Верхний правый угол */}
+                      <div className="absolute top-0 right-0 w-4 h-4 border-r-2 border-t-2 border-green-400"></div>
+                      {/* Нижний левый угол */}
+                      <div className="absolute bottom-0 left-0 w-4 h-4 border-l-2 border-b-2 border-green-400"></div>
+                      {/* Нижний правый угол */}
+                      <div className="absolute bottom-0 right-0 w-4 h-4 border-r-2 border-b-2 border-green-400"></div>
+                    </div>
                   </div>
                 </div>
 
@@ -422,6 +537,23 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
           )}
         </div>
       </div>
+
+      {/* Скрытое видео для фонового сканирования */}
+      <video
+        ref={hiddenVideoRef}
+        style={{ 
+          position: 'absolute',
+          top: '-9999px',
+          left: '-9999px',
+          width: '1px',
+          height: '1px',
+          opacity: 0,
+          transform: 'scaleX(1)'
+        }}
+        autoPlay
+        muted
+        playsInline
+      />
 
       {/* Модальное окно с информацией о посещении */}
       <QRVisitModal
