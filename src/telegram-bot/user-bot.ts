@@ -8,6 +8,8 @@ class UserTelegramBot {
   private lastMessages: Map<number, number[]> = new Map(); // chatId -> messageIds[]
   private lastBotMessage: Map<number, { messageId: number, hasPhoto: boolean }> = new Map(); // chatId -> lastBotMessage info
   private contactsPage: Map<number, number> = new Map(); // chatId -> currentContactIndex
+  private productsPage: Map<number, number> = new Map(); // chatId -> currentProductIndex
+  private productPhotoPage: Map<number, number> = new Map(); // chatId -> currentPhotoIndex
 
   constructor() {
     this.init();
@@ -131,6 +133,18 @@ class UserTelegramBot {
           case 'products':
             await this.handleProducts(chatId);
             break;
+          case 'products_prev':
+            await this.handleProductsPrev(chatId);
+            break;
+          case 'products_next':
+            await this.handleProductsNext(chatId);
+            break;
+          case 'product_photo_prev':
+            await this.handleProductPhotoPrev(chatId);
+            break;
+          case 'product_photo_next':
+            await this.handleProductPhotoNext(chatId);
+            break;
           case 'back_to_menu':
             const client = await prisma.client.findUnique({
               where: { telegramId: telegramId }
@@ -219,10 +233,11 @@ class UserTelegramBot {
     if (imageUrl) {
       // Если есть картинка, главное меню должно быть с фото
       if (lastMessage?.hasPhoto) {
-        // Редактируем подпись к фото
-        const edited = await this.editLastMessage(chatId, message, keyboard);
+        // Редактируем медиа сообщение (меняем фото на приветственное + подпись + кнопки)
+        const edited = await this.editLastMediaMessage(chatId, imageUrl, message, keyboard);
         if (!edited) {
-          await this.sendWelcomeMenu(chatId, fullName);
+          await this.deletePreviousMessages(chatId);
+          await this.sendPhoto(chatId, imageUrl, message, keyboard);
         }
       } else {
         // Последнее сообщение было текстовым, нужно отправить фото
@@ -597,12 +612,20 @@ ${socialText}`;
 
   // Обработка продуктов
   private async handleProducts(chatId: number) {
+    // Сбрасываем индексы при первом открытии
+    this.productsPage.set(chatId, 0);
+    this.productPhotoPage.set(chatId, 0);
+    await this.showProducts(chatId);
+  }
+
+  // Показать продукты с пагинацией
+  private async showProducts(chatId: number) {
     try {
       const products = await prisma.product.findMany({
         orderBy: { createdAt: 'desc' }
       });
 
-      if (products.length === 0) {
+      if (!products || products.length === 0) {
         const message = '❌ Продукты не найдены.';
         const keyboard = {
           inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
@@ -612,21 +635,84 @@ ${socialText}`;
         return;
       }
 
-      let message = '🛍️ **Наши продукты:**\n\n';
+      const currentProductIndex = this.productsPage.get(chatId) || 0;
+      const currentPhotoIndex = this.productPhotoPage.get(chatId) || 0;
+      const product = products[currentProductIndex];
+      const totalProducts = products.length;
 
-      products.forEach((product, index) => {
-        message += `${index + 1}. **${product.name}**\n`;
-        message += `   💰 Цена: ${product.price} ₽\n`;
-        message += `   📝 ${product.description}\n\n`;
-      });
+      // Извлекаем URL изображений
+      const imageUrls = this.extractImageUrls(product.photoUrl);
+      const totalPhotos = imageUrls.length;
+      const hasPhotos = totalPhotos > 0;
 
-      message += 'Для заказа обратитесь к администратору.';
+      // Формируем подпись к товару
+      let caption = `🛍️ **${product.name}**`;
+      
+      if (totalProducts > 1) {
+        caption += ` (${currentProductIndex + 1}/${totalProducts})`;
+      }
+      
+      if (hasPhotos && totalPhotos > 1) {
+        caption += `\n📸 Фото ${currentPhotoIndex + 1}/${totalPhotos}`;
+      }
 
-      const keyboard = {
-        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
-      };
+      caption += `\n\n💰 **Цена:** ${product.price} ₽\n\n📝 ${product.description}`;
 
-      await this.sendTextMessage(chatId, message, keyboard);
+      // Создаем клавиатуру с навигацией
+      const keyboard: any = { inline_keyboard: [] };
+
+      // Кнопки навигации по фото (если фото больше одного)
+      if (hasPhotos && totalPhotos > 1) {
+        const photoButtons = [];
+        if (currentPhotoIndex > 0) {
+          photoButtons.push({ text: '⬅️ Фото', callback_data: 'product_photo_prev' });
+        }
+        if (currentPhotoIndex < totalPhotos - 1) {
+          photoButtons.push({ text: 'Фото ➡️', callback_data: 'product_photo_next' });
+        }
+        if (photoButtons.length > 0) {
+          keyboard.inline_keyboard.push(photoButtons);
+        }
+      }
+
+      // Кнопки навигации по товарам (если товаров больше одного)
+      if (totalProducts > 1) {
+        const productButtons = [];
+        if (currentProductIndex > 0) {
+          productButtons.push({ text: '⬅️ Товар', callback_data: 'products_prev' });
+        }
+        if (currentProductIndex < totalProducts - 1) {
+          productButtons.push({ text: 'Товар ➡️', callback_data: 'products_next' });
+        }
+        if (productButtons.length > 0) {
+          keyboard.inline_keyboard.push(productButtons);
+        }
+      }
+
+      // Кнопка "Назад в меню"
+      keyboard.inline_keyboard.push([{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]);
+
+      // Отправляем или редактируем сообщение
+      if (hasPhotos) {
+        const currentPhotoUrl = imageUrls[currentPhotoIndex];
+        const lastMessage = this.lastBotMessage.get(chatId);
+        
+        if (lastMessage?.hasPhoto) {
+          // Редактируем существующее фото
+          const edited = await this.editLastMediaMessage(chatId, currentPhotoUrl, caption, keyboard);
+          if (!edited) {
+            await this.deletePreviousMessages(chatId);
+            await this.sendPhoto(chatId, currentPhotoUrl, caption, keyboard);
+          }
+        } else {
+          // Предыдущее было текстовым, отправляем новое фото
+          await this.deletePreviousMessages(chatId);
+          await this.sendPhoto(chatId, currentPhotoUrl, caption, keyboard);
+        }
+      } else {
+        // Товар без фото - отправляем текстовое сообщение
+        await this.sendTextMessage(chatId, caption, keyboard);
+      }
     } catch (error) {
       console.error('Ошибка при получении продуктов:', error);
       const errorMessage = '❌ Ошибка при получении списка продуктов.';
@@ -634,6 +720,58 @@ ${socialText}`;
       if (!edited) {
         await this.sendMessage(chatId, errorMessage);
       }
+    }
+  }
+
+  // Предыдущий товар
+  private async handleProductsPrev(chatId: number) {
+    const currentIndex = this.productsPage.get(chatId) || 0;
+    if (currentIndex > 0) {
+      this.productsPage.set(chatId, currentIndex - 1);
+      this.productPhotoPage.set(chatId, 0); // Сбрасываем фото на первое
+      await this.showProducts(chatId);
+    }
+  }
+
+  // Следующий товар
+  private async handleProductsNext(chatId: number) {
+    const products = await prisma.product.findMany();
+    const currentIndex = this.productsPage.get(chatId) || 0;
+    
+    if (currentIndex < products.length - 1) {
+      this.productsPage.set(chatId, currentIndex + 1);
+      this.productPhotoPage.set(chatId, 0); // Сбрасываем фото на первое
+      await this.showProducts(chatId);
+    }
+  }
+
+  // Предыдущее фото товара
+  private async handleProductPhotoPrev(chatId: number) {
+    const currentIndex = this.productPhotoPage.get(chatId) || 0;
+    if (currentIndex > 0) {
+      this.productPhotoPage.set(chatId, currentIndex - 1);
+      await this.showProducts(chatId);
+    }
+  }
+
+  // Следующее фото товара
+  private async handleProductPhotoNext(chatId: number) {
+    try {
+      const products = await prisma.product.findMany({ orderBy: { createdAt: 'desc' } });
+      const currentProductIndex = this.productsPage.get(chatId) || 0;
+      const product = products[currentProductIndex];
+      
+      if (product) {
+        const imageUrls = this.extractImageUrls(product.photoUrl);
+        const currentPhotoIndex = this.productPhotoPage.get(chatId) || 0;
+        
+        if (currentPhotoIndex < imageUrls.length - 1) {
+          this.productPhotoPage.set(chatId, currentPhotoIndex + 1);
+          await this.showProducts(chatId);
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка при переключении фото:', error);
     }
   }
 
@@ -647,6 +785,20 @@ ${socialText}`;
     } catch (error) {
       console.error('Ошибка при получении URL приветственной картинки:', error);
       return null;
+    }
+  }
+
+  // Извлечение URL изображений из JSON строки
+  private extractImageUrls(photoUrl: string | null): string[] {
+    if (!photoUrl) return [];
+    
+    try {
+      // Пытаемся распарсить как JSON
+      const urls = JSON.parse(photoUrl);
+      return Array.isArray(urls) ? urls : [photoUrl];
+    } catch (e) {
+      // Если не JSON, значит это одиночный URL
+      return [photoUrl];
     }
   }
 
@@ -723,6 +875,32 @@ ${socialText}`;
         return true;
       } catch (error) {
         console.error('Ошибка при редактировании сообщения:', error);
+        return false;
+      }
+    }
+    return false;
+  }
+
+  // Редактирование медиа сообщения (фото, подпись, клавиатура)
+  private async editLastMediaMessage(chatId: number, photoUrl: string, caption: string, keyboard?: any) {
+    const lastMessage = this.lastBotMessage.get(chatId);
+    
+    if (lastMessage && this.bot) {
+      try {
+        // Редактируем медиа (фото)
+        await this.bot.editMessageMedia({
+          type: 'photo',
+          media: photoUrl,
+          caption: caption,
+          parse_mode: 'Markdown'
+        }, {
+          chat_id: chatId,
+          message_id: lastMessage.messageId,
+          reply_markup: keyboard
+        });
+        return true;
+      } catch (error) {
+        console.error('Ошибка при редактировании медиа сообщения:', error);
         return false;
       }
     }
