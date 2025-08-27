@@ -3,16 +3,14 @@ import { prisma } from '@/lib/prisma';
 
 export async function GET() {
   try {
-    // Получаем список клиентов, которые писали сообщения
-    // и показываем последнее сообщение для каждого
-    const conversations = await prisma.$queryRaw<Array<{
+    // Сначала получаем базовую информацию о разговорах
+    const baseConversations = await prisma.$queryRaw<Array<{
       client_id: number;
       client_name: string;
       client_photo: string | null;
       client_phone: string;
       last_message: string;
       last_message_time: Date;
-      unread_count: number;
       sender_role: string;
     }>>`
       SELECT DISTINCT 
@@ -22,18 +20,7 @@ export async function GET() {
         c.phone as client_phone,
         f.message as last_message,
         f.created_at as last_message_time,
-        f.sender_role,
-        (
-          SELECT COUNT(*)
-          FROM feedback f2
-          WHERE f2.client_id = c.id
-          AND f2.sender_role = 'user'
-          AND NOT EXISTS (
-            SELECT 1 FROM feedback f3
-            WHERE f3.parent_id = f2.id
-            AND f3.sender_role = 'admin'
-          )
-        ) as unread_count
+        f.sender_role
       FROM clients c
       JOIN feedback f ON c.id = f.client_id
       WHERE f.id IN (
@@ -45,21 +32,44 @@ export async function GET() {
       ORDER BY f.created_at DESC
     `;
 
-    // Форматируем результат
-    const formattedConversations = conversations.map(conv => ({
-      clientId: conv.client_id,
-      clientName: conv.client_name,
-      clientPhoto: conv.client_photo,
-      clientPhone: conv.client_phone,
-      lastMessage: conv.last_message,
-      lastMessageTime: conv.last_message_time,
-      unreadCount: Number(conv.unread_count),
-      lastMessageFromUser: conv.sender_role === 'user'
-    }));
+    // Теперь для каждого клиента вычисляем количество последовательных сообщений от пользователя
+    const conversationsWithUnreadCount = await Promise.all(
+      baseConversations.map(async (conv) => {
+        // Получаем последние сообщения клиента в хронологическом порядке
+        const recentMessages = await prisma.feedback.findMany({
+          where: { clientId: conv.client_id },
+          orderBy: { createdAt: 'desc' },
+          take: 50, // Берем последние 50 сообщений для анализа
+          select: { senderRole: true, createdAt: true }
+        });
+
+        // Считаем последовательные сообщения пользователя с конца
+        let unreadCount = 0;
+        for (const message of recentMessages) {
+          if (message.senderRole === 'user') {
+            unreadCount++;
+          } else {
+            // Как только встретили сообщение админа - прекращаем счет
+            break;
+          }
+        }
+
+        return {
+          clientId: conv.client_id,
+          clientName: conv.client_name,
+          clientPhoto: conv.client_photo,
+          clientPhone: conv.client_phone,
+          lastMessage: conv.last_message,
+          lastMessageTime: conv.last_message_time,
+          unreadCount: unreadCount,
+          lastMessageFromUser: conv.sender_role === 'user'
+        };
+      })
+    );
 
     return NextResponse.json({
-      conversations: formattedConversations,
-      total: formattedConversations.length
+      conversations: conversationsWithUnreadCount,
+      total: conversationsWithUnreadCount.length
     });
   } catch (error) {
     console.error('Ошибка получения разговоров:', error);

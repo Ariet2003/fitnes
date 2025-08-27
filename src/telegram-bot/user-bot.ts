@@ -10,6 +10,7 @@ class UserTelegramBot {
   private contactsPage: Map<number, number> = new Map(); // chatId -> currentContactIndex
   private productsPage: Map<number, number> = new Map(); // chatId -> currentProductIndex
   private productPhotoPage: Map<number, number> = new Map(); // chatId -> currentPhotoIndex
+  private feedbackMode: Map<number, boolean> = new Map(); // chatId -> isInFeedbackMode
 
   constructor() {
     this.init();
@@ -167,12 +168,18 @@ class UserTelegramBot {
       if (msg.text?.startsWith('/')) return;
       
       const chatId = msg.chat.id;
+      const telegramId = msg.from?.id.toString();
       
-      // Удаляем предыдущие сообщения при любом новом тексте
+      // Проверяем, находится ли пользователь в режиме отзыва
+      if (this.feedbackMode.get(chatId)) {
+        // Добавляем сообщение пользователя в историю для удаления
+        this.addMessageToHistory(chatId, msg.message_id);
+        await this.handleFeedbackMessage(chatId, telegramId!, msg.text!);
+        return;
+      }
+      
+      // Удаляем предыдущие сообщения при любом новом тексте (если не в режиме отзыва)
       await this.deletePreviousMessages(chatId);
-      
-      // Можно добавить обработку обычных текстовых сообщений здесь
-      // Например, для отзывов и рекомендаций
     });
 
     // Обработка ошибок polling
@@ -206,6 +213,9 @@ class UserTelegramBot {
 
   // Обработка возврата в главное меню
   private async handleBackToMenu(chatId: number, fullName: string) {
+    // Отключаем режим ввода отзыва при возврате в меню
+    this.feedbackMode.delete(chatId);
+    
     const message = `👋 Добро пожаловать, ${fullName}!
 
 Выберите нужный раздел:`;
@@ -479,25 +489,255 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
 
   // Обработка отзывов и рекомендаций
   private async handleFeedback(chatId: number, telegramId: string) {
-    const message = `💬 Отзывы и рекомендации
+    try {
+      // Получаем клиента по telegramId
+      const client = await prisma.client.findUnique({
+        where: { telegramId: telegramId }
+      });
 
-Напишите ваше сообщение, и мы обязательно рассмотрим его.
+      if (!client) {
+        const message = '❌ Клиент не найден.';
+        const keyboard = {
+          inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+        };
+        await this.sendTextMessage(chatId, message, keyboard);
+        return;
+      }
 
-Вы можете:
-• Оставить отзыв о работе клуба
-• Сообщить о проблемах
-• Предложить улучшения
-• Задать вопрос администрации
+      // Получаем последние 10 сообщений клиента (вопросы + ответы)
+      const recentMessages = await this.getRecentFeedbackMessages(client.id);
 
-Просто напишите ваше сообщение следующим сообщением.`;
+      if (recentMessages.length === 0) {
+        // Нет предыдущих сообщений - предлагаем написать отзыв
+        const message = `💬 **Отзывы и рекомендации**
+
+Мы ценим ваше мнение! Поделитесь своими впечатлениями о нашем фитнес-центре или оставьте рекомендации для улучшения наших услуг.
+
+📝 Напишите ваше сообщение, и мы обязательно ответим!`;
+
+        const keyboard = {
+          inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+        };
+
+        // Включаем режим ввода отзыва
+        this.feedbackMode.set(chatId, true);
+        await this.sendTextMessage(chatId, message, keyboard);
+      } else {
+        // Показываем историю сообщений
+        await this.showFeedbackHistory(chatId, recentMessages);
+      }
+    } catch (error) {
+      console.error('Ошибка при обработке отзывов:', error);
+      const errorMessage = '❌ Ошибка при получении отзывов.';
+      const keyboard = {
+        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+      };
+      await this.sendTextMessage(chatId, errorMessage, keyboard);
+    }
+  }
+
+  // Получение последних сообщений отзывов клиента
+  private async getRecentFeedbackMessages(clientId: number) {
+    try {
+      // Упрощенный запрос - получаем все сообщения клиента и ответы на них
+      const messages = await prisma.$queryRaw<Array<{
+        id: number;
+        client_id: number | null;
+        parent_id: number | null;
+        sender_role: string;
+        message: string;
+        created_at: Date;
+      }>>`
+        SELECT 
+          f.id, 
+          f.client_id, 
+          f.parent_id, 
+          f.sender_role, 
+          f.message, 
+          f.created_at
+        FROM feedback f
+        WHERE 
+          f.client_id = ${clientId}
+          OR (
+            f.sender_role = 'admin' 
+            AND f.parent_id IN (
+              SELECT id FROM feedback 
+              WHERE client_id = ${clientId} AND sender_role = 'user'
+            )
+          )
+        ORDER BY f.created_at ASC
+        LIMIT 20
+      `;
+
+      return messages.map(msg => ({
+        id: msg.id,
+        message: msg.message,
+        senderRole: msg.sender_role,
+        createdAt: msg.created_at,
+        isReply: !!msg.parent_id,
+        parentId: msg.parent_id
+      }));
+    } catch (error) {
+      console.error('Ошибка при получении сообщений отзывов:', error);
+      return [];
+    }
+  }
+
+  // Показать историю отзывов
+  private async showFeedbackHistory(chatId: number, messages: any[]) {
+    let historyText = `💬 **История ваших обращений**\n\n`;
+
+    // Сортируем все сообщения по времени создания
+    const sortedMessages = messages.sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    // Берем последние 10 сообщений
+    const recentMessages = sortedMessages.slice(-10);
+
+    // Отображаем сообщения в хронологическом порядке
+    recentMessages.forEach(msg => {
+      if (msg.senderRole === 'user') {
+        historyText += `🏋️: "${msg.message}"\n`;
+      } else {
+        historyText += `👤: "${msg.message}"\n`;
+      }
+    });
+
+    // Проверяем, есть ли непрочитанные сообщения пользователя
+    const lastMessage = recentMessages[recentMessages.length - 1];
+    const hasUnreadUserMessages = recentMessages.some(msg => {
+      if (msg.senderRole === 'user') {
+        // Проверяем, есть ли ответ админа после этого сообщения
+        const hasAdminReply = recentMessages.some(adminMsg => 
+          adminMsg.senderRole === 'admin' && 
+          new Date(adminMsg.createdAt) > new Date(msg.createdAt)
+        );
+        return !hasAdminReply;
+      }
+      return false;
+    });
+
+    if (hasUnreadUserMessages) {
+      historyText += `\n⏳ Ждите ответа...\n`;
+    }
+
+    historyText += `\n📝 Чтобы оставить новый отзыв, просто напишите сообщение.\n`;
+    historyText += `🔄 Чтобы обновить историю, перезайдите в "Отзывы".`;
 
     const keyboard = {
       inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
     };
 
-    await this.sendTextMessage(chatId, message, keyboard);
+    // Включаем режим ввода нового отзыва
+    this.feedbackMode.set(chatId, true);
+    await this.sendTextMessage(chatId, historyText, keyboard);
+  }
 
-    // Здесь можно добавить логику для обработки следующего сообщения как отзыва
+  // Показать историю отзывов с подтверждением отправки
+  private async showFeedbackHistoryWithConfirmation(chatId: number, messages: any[], lastMessage: string) {
+    let historyText = `✅ **Сообщение отправлено!**\n\n`;
+    historyText += `💬 **История ваших обращений**\n\n`;
+
+    // Сортируем все сообщения по времени создания
+    const sortedMessages = messages.sort((a, b) => 
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+
+    // Берем последние 10 сообщений
+    const recentMessages = sortedMessages.slice(-10);
+
+    // Отображаем сообщения в хронологическом порядке
+    recentMessages.forEach(msg => {
+      if (msg.senderRole === 'user') {
+        historyText += `🏋️: "${msg.message}"\n`;
+      } else {
+        historyText += `👤: "${msg.message}"\n`;
+      }
+    });
+
+    // Проверяем, есть ли непрочитанные сообщения пользователя
+    const hasUnreadUserMessages = recentMessages.some(msg => {
+      if (msg.senderRole === 'user') {
+        // Проверяем, есть ли ответ админа после этого сообщения
+        const hasAdminReply = recentMessages.some(adminMsg => 
+          adminMsg.senderRole === 'admin' && 
+          new Date(adminMsg.createdAt) > new Date(msg.createdAt)
+        );
+        return !hasAdminReply;
+      }
+      return false;
+    });
+
+    if (hasUnreadUserMessages) {
+      historyText += `\n⏳ Ждите ответа...\n`;
+    }
+
+    historyText += `\n📝 **Напишите еще одно сообщение** или вернитесь в меню.\n`;
+    historyText += `🔄 Чтобы обновить историю, перезайдите в "Отзывы".`;
+
+    const keyboard = {
+      inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+    };
+
+    // Режим ввода остается активным
+    await this.sendMessage(chatId, historyText, {
+      parse_mode: 'Markdown',
+      reply_markup: keyboard
+    });
+  }
+
+  // Обработка нового сообщения отзыва
+  private async handleFeedbackMessage(chatId: number, telegramId: string, message: string) {
+    try {
+      // Получаем клиента
+      const client = await prisma.client.findUnique({
+        where: { telegramId: telegramId }
+      });
+
+      if (!client) {
+        await this.sendTextMessage(chatId, '❌ Клиент не найден.');
+        this.feedbackMode.delete(chatId);
+        return;
+      }
+
+      // Находим последнее сообщение админа для этого клиента
+      const lastAdminMessage = await prisma.feedback.findFirst({
+        where: {
+          clientId: client.id,
+          senderRole: 'admin'
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      });
+
+      // Сохраняем сообщение в базу данных с правильным parent_id
+      await prisma.feedback.create({
+        data: {
+          clientId: client.id,
+          senderRole: 'user',
+          message: message.trim(),
+          parentId: lastAdminMessage?.id || null // Связываем с последним сообщением админа
+        }
+      });
+
+      // Удаляем сообщение пользователя и предыдущие сообщения
+      await this.deletePreviousMessages(chatId);
+
+      // НЕ отключаем режим ввода отзыва - пользователь может писать дальше
+      // this.feedbackMode.delete(chatId); // Оставляем включенным!
+
+      // Получаем обновленную историю после добавления нового сообщения
+      const updatedMessages = await this.getRecentFeedbackMessages(client.id);
+      
+      // Показываем обновленную историю с подтверждением
+      await this.showFeedbackHistoryWithConfirmation(chatId, updatedMessages, message);
+    } catch (error) {
+      console.error('Ошибка при сохранении отзыва:', error);
+      await this.sendTextMessage(chatId, '❌ Ошибка при отправке сообщения. Попробуйте еще раз.');
+      this.feedbackMode.delete(chatId);
+    }
   }
 
   // Обработка контактов
@@ -835,6 +1075,8 @@ ${socialText}`;
     
     // Очищаем список после удаления
     this.lastMessages.set(chatId, []);
+    // Очищаем информацию о последнем сообщении бота
+    this.lastBotMessage.delete(chatId);
   }
 
   // Сохранение ID сообщения для последующего удаления
@@ -920,15 +1162,22 @@ ${socialText}`;
         parse_mode: 'Markdown',
         reply_markup: keyboard
       });
-    } else {
+    } else if (lastMessage) {
       // Пытаемся редактировать текстовое сообщение
       const edited = await this.editLastMessage(chatId, text, keyboard);
       if (!edited) {
+        // Если редактирование не удалось, отправляем новое
         await this.sendMessage(chatId, text, {
           parse_mode: 'Markdown',
           reply_markup: keyboard
         });
       }
+    } else {
+      // Нет предыдущего сообщения - отправляем новое
+      await this.sendMessage(chatId, text, {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      });
     }
   }
 
