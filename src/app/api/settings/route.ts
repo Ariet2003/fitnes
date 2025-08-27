@@ -7,7 +7,7 @@ export async function GET() {
     const settings = await prisma.setting.findMany({
       where: {
         key: {
-          in: ['admin', 'admin_telegram', 'admin_bot_token']
+          in: ['admin', 'admin_telegram', 'admin_bot_token', 'welcome_image_url']
         }
       }
     });
@@ -28,6 +28,8 @@ export async function GET() {
         formattedSettings.adminTelegram = setting.value;
       } else if (setting.key === 'admin_bot_token') {
         formattedSettings.adminBotToken = setting.value;
+      } else if (setting.key === 'welcome_image_url') {
+        formattedSettings.welcomeImageUrl = setting.value;
       }
     });
 
@@ -44,7 +46,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const data = await request.json();
-    const { adminLogin, adminPassword, adminTelegram, adminBotToken } = data;
+    const { adminLogin, adminPassword, adminTelegram, adminBotToken, welcomeImageUrl } = data;
 
     // Валидация данных
     if (!adminLogin || !adminTelegram || !adminBotToken) {
@@ -132,6 +134,28 @@ export async function POST(request: NextRequest) {
           value: adminBotToken
         }
       });
+
+      // Обновляем URL приветственного изображения, если передан
+      if (welcomeImageUrl !== undefined) {
+        if (welcomeImageUrl) {
+          await tx.setting.upsert({
+            where: { key: 'welcome_image_url' },
+            update: {
+              value: welcomeImageUrl,
+              updatedAt: new Date()
+            },
+            create: {
+              key: 'welcome_image_url',
+              value: welcomeImageUrl
+            }
+          });
+        } else {
+          // Если передана пустая строка, удаляем настройку
+          await tx.setting.deleteMany({
+            where: { key: 'welcome_image_url' }
+          });
+        }
+      }
     });
 
     return NextResponse.json({ success: true, message: 'Настройки успешно обновлены' });
@@ -143,6 +167,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 
 

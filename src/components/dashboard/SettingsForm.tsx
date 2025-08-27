@@ -1,26 +1,31 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Save, Eye, EyeOff, Settings, MessageCircle, Bot, User, Lock } from 'lucide-react';
+import { Save, Eye, EyeOff, Settings, MessageCircle, Bot, User, Lock, Upload, Image, Trash2 } from 'lucide-react';
 import { useToast, ToastContainer } from '@/components/ui/Toast';
 
 interface SettingsData {
   adminLogin: string;
   adminTelegram: string;
   adminBotToken: string;
+  welcomeImageUrl: string;
 }
 
 export default function SettingsForm() {
   const [formData, setFormData] = useState<SettingsData>({
     adminLogin: '',
     adminTelegram: '',
-    adminBotToken: ''
+    adminBotToken: '',
+    welcomeImageUrl: ''
   });
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showBotToken, setShowBotToken] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   
   const { toasts, removeToast, success, error } = useToast();
 
@@ -38,8 +43,14 @@ export default function SettingsForm() {
           setFormData({
             adminLogin: data.adminLogin || '',
             adminTelegram: data.adminTelegram || '',
-            adminBotToken: data.adminBotToken || ''
+            adminBotToken: data.adminBotToken || '',
+            welcomeImageUrl: data.welcomeImageUrl || ''
           });
+          
+          // Устанавливаем превью, если есть картинка
+          if (data.welcomeImageUrl) {
+            setImagePreview(data.welcomeImageUrl);
+          }
         } else {
           const errorText = await response.text();
           console.error('Ошибка API:', response.status, errorText);
@@ -56,13 +67,88 @@ export default function SettingsForm() {
     fetchSettings();
   }, []); // Пустой массив зависимостей
 
+  // Обработка выбора файла картинки
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Проверяем тип файла
+      if (!file.type.startsWith('image/')) {
+        error('Ошибка', 'Выберите файл изображения');
+        return;
+      }
+
+      // Проверяем размер файла (максимум 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        error('Ошибка', 'Размер файла не должен превышать 5MB');
+        return;
+      }
+
+      setImageFile(file);
+      
+      // Создаем превью
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setImagePreview(e.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Удаление картинки
+  const handleRemoveImage = async () => {
+    if (!formData.welcomeImageUrl) return;
+
+    setIsUploadingImage(true);
+    try {
+      const response = await fetch('/api/settings/image', {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setFormData(prev => ({ ...prev, welcomeImageUrl: '' }));
+        setImagePreview('');
+        setImageFile(null);
+        success('Успешно', 'Картинка удалена');
+      } else {
+        error('Ошибка', 'Не удалось удалить картинку');
+      }
+    } catch (err) {
+      error('Ошибка', 'Ошибка подключения к серверу');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
 
     try {
+      let welcomeImageUrl = formData.welcomeImageUrl;
+
+      // Сначала загружаем картинку, если она выбрана
+      if (imageFile) {
+        const formDataImage = new FormData();
+        formDataImage.append('image', imageFile);
+
+        const imageResponse = await fetch('/api/settings/image', {
+          method: 'POST',
+          body: formDataImage
+        });
+
+        if (imageResponse.ok) {
+          const imageResult = await imageResponse.json();
+          welcomeImageUrl = imageResult.imageUrl;
+        } else {
+          error('Ошибка', 'Не удалось загрузить картинку');
+          return;
+        }
+      }
+
+      // Затем сохраняем остальные настройки
       const payload = {
         ...formData,
+        welcomeImageUrl,
         adminPassword: newPassword || undefined
       };
 
@@ -79,6 +165,10 @@ export default function SettingsForm() {
       if (response.ok) {
         success('Успешно', 'Настройки сохранены');
         setNewPassword(''); // Очищаем поле пароля
+        setImageFile(null); // Очищаем выбранный файл
+        
+        // Обновляем URL картинки в форме
+        setFormData(prev => ({ ...prev, welcomeImageUrl }));
       } else {
         error('Ошибка', result.error || 'Не удалось сохранить настройки');
       }
@@ -236,6 +326,73 @@ export default function SettingsForm() {
                 </div>
                 <p className="text-gray-500 text-xs mt-1">
                   Получите токен у @BotFather в Telegram
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Настройки изображения для бота */}
+          <div className="bg-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-700">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="p-2 bg-purple-500/10 rounded-lg">
+                <Image className="w-5 h-5 text-purple-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white">Приветственное изображение</h2>
+                <p className="text-gray-400 text-sm">Картинка, которая показывается в телеграм боте</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Превью текущей картинки */}
+              {imagePreview && (
+                <div className="relative">
+                  <div className="flex items-center gap-4">
+                    <img
+                      src={imagePreview}
+                      alt="Превью"
+                      className="w-32 h-32 object-cover rounded-lg border border-gray-600"
+                    />
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-300 mb-2">Текущее изображение</p>
+                      <button
+                        type="button"
+                        onClick={handleRemoveImage}
+                        disabled={isUploadingImage}
+                        className="flex items-center gap-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-600/30 rounded-lg transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Загрузка новой картинки */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Загрузить новое изображение
+                </label>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 px-4 py-3 bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg cursor-pointer transition-colors">
+                    <Upload className="w-4 h-4 text-gray-300" />
+                    <span className="text-gray-300">Выбрать файл</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {imageFile && (
+                    <span className="text-sm text-gray-400">
+                      {imageFile.name}
+                    </span>
+                  )}
+                </div>
+                <p className="text-gray-500 text-xs mt-1">
+                  Поддерживаются форматы: JPG, PNG, GIF. Максимальный размер: 5MB
                 </p>
               </div>
             </div>
