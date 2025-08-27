@@ -94,10 +94,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Проверим, не было ли уже посещения сегодня
+    // Проверим, не было ли уже посещения сегодня (с учетом временной зоны +6)
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
+    // Переводим время в +6 часовой пояс
+    const offsetTime = new Date(today.getTime() + 6 * 60 * 60 * 1000);
+    offsetTime.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(offsetTime);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const todayVisit = await prisma.visit.findFirst({
@@ -105,7 +107,7 @@ export async function POST(request: NextRequest) {
         clientId: client.id,
         subscriptionId: activeSubscription.id,
         visitDate: {
-          gte: today,
+          gte: offsetTime,
           lt: tomorrow
         }
       }
@@ -120,7 +122,7 @@ export async function POST(request: NextRequest) {
         clientId: client.id,
         subscriptionId: activeSubscription.id,
         visitDate: {
-          gte: today,
+          gte: offsetTime,
           lt: tomorrow
         },
         isFreezeDay: true
@@ -222,10 +224,11 @@ export async function PUT(request: NextRequest) {
 
     const activeSubscription = client.subscriptions[0];
 
-    // Проверим, не было ли уже посещения сегодня
+    // Проверим, не было ли уже посещения сегодня (с учетом временной зоны +6)
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
+    const offsetTime = new Date(today.getTime() + 6 * 60 * 60 * 1000);
+    offsetTime.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(offsetTime);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     const todayVisit = await prisma.visit.findFirst({
@@ -233,7 +236,7 @@ export async function PUT(request: NextRequest) {
         clientId: client.id,
         subscriptionId: activeSubscription.id,
         visitDate: {
-          gte: today,
+          gte: offsetTime,
           lt: tomorrow
         }
       }
@@ -247,11 +250,14 @@ export async function PUT(request: NextRequest) {
     }
 
     // Создаем запись о посещении
+    // Создаем время посещения с учетом временной зоны +6
+    const visitDateTime = new Date(new Date().getTime() + 6 * 60 * 60 * 1000);
+    
     const visit = await prisma.visit.create({
       data: {
         clientId: client.id,
         subscriptionId: activeSubscription.id,
-        visitDate: new Date(),
+        visitDate: visitDateTime,
         qrCode: telegramId, // Используем telegram ID как QR код
         isFreezeDay: false
       }
@@ -321,9 +327,11 @@ export async function PATCH(request: NextRequest) {
     }
 
     const activeSubscription = client.subscriptions[0];
+    // Применяем временную зону +6
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
+    const offsetTime = new Date(today.getTime() + 6 * 60 * 60 * 1000);
+    offsetTime.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(offsetTime);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
     if (action === 'freeze') {
@@ -335,12 +343,14 @@ export async function PATCH(request: NextRequest) {
         });
       }
 
-      // Создаем запись заморозки
+      // Создаем запись заморозки с учетом временной зоны +6
+      const freezeDateTime = new Date(new Date().getTime() + 6 * 60 * 60 * 1000);
+      
       await prisma.visit.create({
         data: {
           clientId: client.id,
           subscriptionId: activeSubscription.id,
-          visitDate: new Date(),
+          visitDate: freezeDateTime,
           qrCode: telegramId,
           isFreezeDay: true
         }
@@ -367,10 +377,10 @@ export async function PATCH(request: NextRequest) {
         where: {
           clientId: client.id,
           subscriptionId: activeSubscription.id,
-          visitDate: {
-            gte: today,
-            lt: tomorrow
-          },
+                  visitDate: {
+          gte: offsetTime,
+          lt: tomorrow
+        },
           isFreezeDay: true
         }
       });

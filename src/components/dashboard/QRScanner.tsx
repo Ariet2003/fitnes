@@ -25,12 +25,18 @@ interface ScanResult {
     tariffName: string;
     endDate: string;
     remainingDays: number;
+    freezeUsed: number;
+    freezeLimit: number;
+    status: string;
   };
   visitTime?: string;
   workingHours?: {
     start: string;
     end: string;
   };
+  canFreeze?: boolean;
+  isFrozenToday?: boolean;
+  canUnfreeze?: boolean;
 }
 
 export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
@@ -127,19 +133,22 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     }
   }, []);
 
-  const validateAndProcessQR = useCallback(async (telegramId: string) => {
+  const validateAndProcessQR = useCallback(async (telegramId: string, isRefresh = false) => {
     try {
-      // Проверяем глобальную блокировку
-      if (isBlocked) {
+      // Проверяем глобальную блокировку только для новых сканирований
+      if (isBlocked && !isRefresh) {
         console.log('🚫 Сканирование глобально заблокировано');
         return;
       }
 
-      console.log('🔒 Блокируем сканирование и обрабатываем QR-код:', telegramId);
-      
-      // Полностью блокируем сканирование
-      setIsBlocked(true);
-      setLastScanned(telegramId);
+      if (!isRefresh) {
+        console.log('🔒 Блокируем сканирование и обрабатываем QR-код:', telegramId);
+        // Полностью блокируем сканирование только для новых сканирований
+        setIsBlocked(true);
+        setLastScanned(telegramId);
+      } else {
+        console.log('🔄 Обновляем данные для:', telegramId);
+      }
 
       const response = await fetch('/api/visits', {
         method: 'POST',
@@ -149,31 +158,36 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
         body: JSON.stringify({ telegramId }),
       });
 
-             const result = await response.json();
-       setScanResult(result);
-       setShowVisitModal(true);
+      const result = await response.json();
+      setScanResult(result);
+      
+      if (!isRefresh) {
+        setShowVisitModal(true);
+        
+        // Показываем уведомление только для новых сканирований
+        if (result.success) {
+          showNotification('QR найден!', `Клиент: ${result.client?.fullName || 'Неизвестен'}`);
+        } else {
+          showNotification('Ошибка доступа', result.error || 'Проблема с абонементом');
+        }
 
-       // Показываем уведомление
-       if (result.success) {
-         showNotification('QR найден!', `Клиент: ${result.client?.fullName || 'Неизвестен'}`);
-       } else {
-         showNotification('Ошибка доступа', result.error || 'Проблема с абонементом');
-       }
-
-       if (onScanResult) {
-         onScanResult(telegramId);
-       }
+        if (onScanResult) {
+          onScanResult(telegramId);
+        }
+      }
     } catch (error) {
       console.error('Ошибка при обработке QR-кода:', error);
       setScanResult({
         success: false,
         error: 'Ошибка при обработке QR-кода',
         errorType: 'PROCESSING_ERROR'
-             });
-       setShowVisitModal(true);
-       showNotification('Ошибка сканирования', 'Не удалось обработать QR-код');
-     }
-   }, [isBlocked, onScanResult, showNotification]);
+      });
+      if (!isRefresh) {
+        setShowVisitModal(true);
+        showNotification('Ошибка сканирования', 'Не удалось обработать QR-код');
+      }
+    }
+  }, [isBlocked, onScanResult, showNotification]);
 
   const startScanning = async () => {
     console.log('🎥 Попытка запуска сканера...', {
@@ -414,6 +428,35 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     console.log('✅ Сканирование разблокировано и готово к работе');
   };
 
+  // Функция для обработки действий из модального окна (разморозка, заморозка)
+  const handleModalAction = useCallback(async (action: 'freeze' | 'unfreeze', telegramId: string) => {
+    try {
+      const response = await fetch('/api/visits', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ telegramId, action }),
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        if (action === 'unfreeze') {
+          // После успешной разморозки обновляем данные
+          console.log('🔄 Обновляем данные после разморозки');
+          await validateAndProcessQR(telegramId, true);
+        } else {
+          // После заморозки закрываем модальное окно
+          closeModal();
+        }
+      }
+      return result;
+    } catch (error) {
+      console.error(`Ошибка при ${action}:`, error);
+      throw error;
+    }
+  }, [validateAndProcessQR]);
+
   // Не показываем сканер если он отключен
   if (!isEnabled) {
     return null;
@@ -572,7 +615,8 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
         onClose={closeModal}
         scannedData={scanResult}
         onMarkVisit={handleMarkVisit}
-        telegramId={lastScanned}
+        onModalAction={handleModalAction}
+        telegramId={lastScanned || undefined}
       />
     </>
   );

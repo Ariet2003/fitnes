@@ -36,6 +36,7 @@ interface QRVisitModalProps {
     canUnfreeze?: boolean;
   } | null;
   onMarkVisit: () => void;
+  onModalAction?: (action: 'freeze' | 'unfreeze', telegramId: string) => Promise<any>;
   telegramId?: string;
 }
 
@@ -44,6 +45,7 @@ export default function QRVisitModal({
   onClose, 
   scannedData,
   onMarkVisit,
+  onModalAction,
   telegramId 
 }: QRVisitModalProps) {
   const [isMarking, setIsMarking] = useState(false);
@@ -67,18 +69,22 @@ export default function QRVisitModal({
     
     setIsFreezing(true);
     try {
-      const response = await fetch('/api/visits', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ telegramId, action: 'freeze' }),
-      });
+      if (onModalAction) {
+        await onModalAction('freeze', telegramId);
+      } else {
+        // Fallback к старому способу
+        const response = await fetch('/api/visits', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ telegramId, action: 'freeze' }),
+        });
 
-      const result = await response.json();
-      if (result.success) {
-        // Обновляем данные и закрываем модальное окно
-        onClose();
+        const result = await response.json();
+        if (result.success) {
+          onClose();
+        }
       }
     } catch (error) {
       console.error('Ошибка при заморозке:', error);
@@ -92,17 +98,23 @@ export default function QRVisitModal({
     
     setIsUnfreezing(true);
     try {
-      const response = await fetch('/api/visits', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ telegramId, action: 'unfreeze' }),
-      });
+      if (onModalAction) {
+        await onModalAction('unfreeze', telegramId);
+        // После успешной разморозки данные уже обновлены в родительском компоненте
+      } else {
+        // Fallback к старому способу
+        const response = await fetch('/api/visits', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ telegramId, action: 'unfreeze' }),
+        });
 
-      const result = await response.json();
-      if (result.success) {
-        setIsUnfrozen(true);
+        const result = await response.json();
+        if (result.success) {
+          onClose();
+        }
       }
     } catch (error) {
       console.error('Ошибка при разморозке:', error);
