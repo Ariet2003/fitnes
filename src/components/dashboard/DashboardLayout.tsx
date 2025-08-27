@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import Header from './Header';
 import Sidebar from './Sidebar';
 import BottomNavigation from './BottomNavigation';
+import QRScanner from './QRScanner';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -12,6 +13,7 @@ interface DashboardLayoutProps {
 
 export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [qrScannerEnabled, setQrScannerEnabled] = useState(false);
   const pathname = usePathname();
   const isNotificationsPage = pathname === '/dashboard/notifications';
 
@@ -23,6 +25,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     setSidebarOpen(false);
   };
 
+  const toggleQRScanner = () => {
+    setQrScannerEnabled(!qrScannerEnabled);
+  };
+
   if (isNotificationsPage) {
     return (
       <div className="h-screen bg-gray-900 overflow-hidden">
@@ -32,7 +38,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
 
         {/* Header на всю ширину */}
-        <Header onToggleSidebar={toggleSidebar} />
+        <Header 
+          onToggleSidebar={toggleSidebar} 
+          isQRScannerEnabled={qrScannerEnabled}
+          onToggleQRScanner={toggleQRScanner}
+        />
 
         {/* Bottom Navigation - только для мобильных */}
         <BottomNavigation />
@@ -41,6 +51,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <div className="lg:ml-[288px] xl:ml-[304px] pt-14 sm:pt-16 pb-16 lg:pb-0 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] lg:h-[calc(100vh-0rem)]">
           {children}
         </div>
+
+        {/* QR Scanner - работает на всех страницах */}
+        <QRScanner isEnabled={qrScannerEnabled} />
       </div>
     );
   }
@@ -53,7 +66,11 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
       </div>
 
       {/* Header на всю ширину */}
-      <Header onToggleSidebar={toggleSidebar} />
+      <Header 
+        onToggleSidebar={toggleSidebar} 
+        isQRScannerEnabled={qrScannerEnabled}
+        onToggleQRScanner={toggleQRScanner}
+      />
 
       {/* Bottom Navigation - только для мобильных */}
       <BottomNavigation />
@@ -64,6 +81,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           {children}
         </main>
       </div>
+
+      {/* QR Scanner - работает на всех страницах */}
+      <QRScanner isEnabled={qrScannerEnabled} />
     </div>
   );
 }

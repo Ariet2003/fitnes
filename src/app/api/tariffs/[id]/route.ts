@@ -22,7 +22,7 @@ export async function GET(
       include: {
         _count: {
           select: {
-            clients: true,
+            
             subscriptions: true
           }
         }
@@ -64,6 +64,47 @@ export async function PUT(
 
     const { name, price, durationDays, duration, freezeLimit, startTime, endTime } = await request.json();
 
+    // Валидация числовых значений
+    if (price !== undefined) {
+      const priceValue = typeof price === 'number' ? price : parseFloat(price);
+      if (isNaN(priceValue) || priceValue < 0) {
+        return NextResponse.json(
+          { error: 'Некорректная цена' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (durationDays !== undefined) {
+      const durationDaysValue = typeof durationDays === 'number' ? durationDays : parseInt(durationDays);
+      if (isNaN(durationDaysValue) || durationDaysValue <= 0) {
+        return NextResponse.json(
+          { error: 'Некорректное количество дней' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (duration !== undefined) {
+      const durationValue = typeof duration === 'number' ? duration : parseInt(duration);
+      if (isNaN(durationValue) || durationValue <= 0) {
+        return NextResponse.json(
+          { error: 'Некорректная длительность' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (freezeLimit !== undefined) {
+      const freezeLimitValue = typeof freezeLimit === 'number' ? freezeLimit : parseInt(freezeLimit);
+      if (isNaN(freezeLimitValue) || freezeLimitValue < 0) {
+        return NextResponse.json(
+          { error: 'Некорректный лимит заморозок' },
+          { status: 400 }
+        );
+      }
+    }
+
     // Проверяем существование тарифа
     const existingTariff = await prisma.tariff.findUnique({
       where: { id: tariffId }
@@ -97,17 +138,17 @@ export async function PUT(
       where: { id: tariffId },
       data: {
         ...(name && { name }),
-        ...(price && { price: parseFloat(price) }),
-        ...(durationDays && { durationDays: parseInt(durationDays) }),
-        ...(duration && { duration: parseInt(duration) }),
-        ...(freezeLimit !== undefined && { freezeLimit: parseInt(freezeLimit) }),
+        ...(price !== undefined && { price: typeof price === 'number' ? price : parseFloat(price) }),
+        ...(durationDays !== undefined && { durationDays: typeof durationDays === 'number' ? durationDays : parseInt(durationDays) }),
+        ...(duration !== undefined && { duration: typeof duration === 'number' ? duration : parseInt(duration) }),
+        ...(freezeLimit !== undefined && { freezeLimit: typeof freezeLimit === 'number' ? freezeLimit : parseInt(freezeLimit) }),
         ...(startTime && { startTime }),
         ...(endTime && { endTime })
       },
       include: {
         _count: {
           select: {
-            clients: true,
+            
             subscriptions: true
           }
         }
@@ -146,7 +187,7 @@ export async function DELETE(
       include: {
         _count: {
           select: {
-            clients: true,
+            
             subscriptions: true
           }
         }
@@ -160,10 +201,10 @@ export async function DELETE(
       );
     }
 
-    // Проверяем, есть ли связанные клиенты или подписки
-    if (existingTariff._count.clients > 0 || existingTariff._count.subscriptions > 0) {
+    // Проверяем, есть ли связанные подписки
+    if (existingTariff._count.subscriptions > 0) {
       return NextResponse.json(
-        { error: 'Нельзя удалить тариф, к которому привязаны клиенты или подписки' },
+        { error: 'Нельзя удалить тариф, к которому привязаны подписки' },
         { status: 409 }
       );
     }

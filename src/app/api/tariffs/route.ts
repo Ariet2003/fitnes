@@ -35,9 +35,42 @@ export async function POST(request: NextRequest) {
     const { name, price, durationDays, duration, freezeLimit, startTime, endTime } = await request.json();
 
     // Валидация обязательных полей
-    if (!name || !price || !durationDays || !duration || freezeLimit === undefined) {
+    if (!name || price === undefined || durationDays === undefined || duration === undefined || freezeLimit === undefined) {
       return NextResponse.json(
         { error: 'Все поля обязательны для заполнения' },
+        { status: 400 }
+      );
+    }
+
+    // Валидация числовых значений
+    const priceValue = typeof price === 'number' ? price : parseFloat(price);
+    if (isNaN(priceValue) || priceValue < 0) {
+      return NextResponse.json(
+        { error: 'Некорректная цена' },
+        { status: 400 }
+      );
+    }
+
+    const durationDaysValue = typeof durationDays === 'number' ? durationDays : parseInt(durationDays);
+    if (isNaN(durationDaysValue) || durationDaysValue <= 0) {
+      return NextResponse.json(
+        { error: 'Некорректное количество дней' },
+        { status: 400 }
+      );
+    }
+
+    const durationValue = typeof duration === 'number' ? duration : parseInt(duration);
+    if (isNaN(durationValue) || durationValue <= 0) {
+      return NextResponse.json(
+        { error: 'Некорректная длительность' },
+        { status: 400 }
+      );
+    }
+
+    const freezeLimitValue = typeof freezeLimit === 'number' ? freezeLimit : parseInt(freezeLimit);
+    if (isNaN(freezeLimitValue) || freezeLimitValue < 0) {
+      return NextResponse.json(
+        { error: 'Некорректный лимит заморозок' },
         { status: 400 }
       );
     }
@@ -57,10 +90,10 @@ export async function POST(request: NextRequest) {
     const tariff = await prisma.tariff.create({
       data: {
         name,
-        price: parseFloat(price),
-        durationDays: parseInt(durationDays),
-        duration: parseInt(duration),
-        freezeLimit: parseInt(freezeLimit),
+        price: priceValue,
+        durationDays: durationDaysValue,
+        duration: durationValue,
+        freezeLimit: freezeLimitValue,
         startTime: startTime || "08:00",
         endTime: endTime || "13:00"
       },

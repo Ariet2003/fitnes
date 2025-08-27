@@ -9,14 +9,18 @@ import {
   ChevronDown,
   LogOut,
   Dumbbell,
-  Settings
+  Settings,
+  Camera,
+  CameraOff
 } from 'lucide-react';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
+  isQRScannerEnabled: boolean;
+  onToggleQRScanner: () => void;
 }
 
-export default function Header({ onToggleSidebar }: HeaderProps) {
+export default function Header({ onToggleSidebar, isQRScannerEnabled, onToggleQRScanner }: HeaderProps) {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
   const [isLoadingNotifications, setIsLoadingNotifications] = useState(true);
@@ -99,6 +103,26 @@ export default function Header({ onToggleSidebar }: HeaderProps) {
 
       {/* Правая часть */}
       <div className="flex items-center space-x-2 sm:space-x-4">
+        {/* QR Scanner Toggle */}
+        <button
+          onClick={onToggleQRScanner}
+          className={`relative p-1.5 sm:p-2 rounded-lg transition-all duration-200 group ${
+            isQRScannerEnabled 
+              ? 'text-green-400 bg-green-900/50 hover:bg-green-900/70' 
+              : 'text-gray-300 hover:text-white hover:bg-gray-700'
+          }`}
+          title={isQRScannerEnabled ? 'Выключить QR-сканер' : 'Включить QR-сканер'}
+        >
+          {isQRScannerEnabled ? (
+            <Camera className="w-5 h-5 sm:w-6 sm:h-6 transition-all duration-200 group-hover:scale-110" />
+          ) : (
+            <CameraOff className="w-5 h-5 sm:w-6 sm:h-6 transition-all duration-200 group-hover:scale-110" />
+          )}
+          {isQRScannerEnabled && (
+            <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+          )}
+        </button>
+
         {/* Уведомления */}
         <Link href="/dashboard/notifications">
           <button className="relative p-1.5 sm:p-2 text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-all duration-200 group">
