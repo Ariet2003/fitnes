@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Save, Eye, EyeOff, Settings, MessageCircle, Bot, User, Lock, Upload, Image, Trash2 } from 'lucide-react';
 import { useToast, ToastContainer } from '@/components/ui/Toast';
+import ContactsManager from './ContactsManager';
 
 interface SettingsData {
   adminLogin: string;
@@ -419,6 +420,9 @@ export default function SettingsForm() {
             </button>
           </div>
         </form>
+
+        {/* Управление контактами - вынесено за пределы формы */}
+        <ContactsManager />
       </div>
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />

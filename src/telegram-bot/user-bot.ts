@@ -7,6 +7,7 @@ class UserTelegramBot {
   private isRunning = false;
   private lastMessages: Map<number, number[]> = new Map(); // chatId -> messageIds[]
   private lastBotMessage: Map<number, { messageId: number, hasPhoto: boolean }> = new Map(); // chatId -> lastBotMessage info
+  private contactsPage: Map<number, number> = new Map(); // chatId -> currentContactIndex
 
   constructor() {
     this.init();
@@ -120,6 +121,12 @@ class UserTelegramBot {
             break;
           case 'contacts':
             await this.handleContacts(chatId);
+            break;
+          case 'contacts_prev':
+            await this.handleContactsPrev(chatId);
+            break;
+          case 'contacts_next':
+            await this.handleContactsNext(chatId);
             break;
           case 'products':
             await this.handleProducts(chatId);
@@ -480,10 +487,19 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
 
   // Обработка контактов
   private async handleContacts(chatId: number) {
-    try {
-      const contacts = await prisma.contact.findFirst();
+    // Сбрасываем индекс при первом открытии
+    this.contactsPage.set(chatId, 0);
+    await this.showContacts(chatId);
+  }
 
-      if (!contacts) {
+  // Показать контакты с пагинацией
+  private async showContacts(chatId: number) {
+    try {
+      const contacts = await prisma.contact.findMany({
+        orderBy: { id: 'asc' }
+      });
+
+      if (!contacts || contacts.length === 0) {
         const message = '❌ Контактная информация не найдена.';
         const keyboard = {
           inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
@@ -493,7 +509,11 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
         return;
       }
 
-      const socialLinks = contacts.socialLinks as any;
+      const currentIndex = this.contactsPage.get(chatId) || 0;
+      const contact = contacts[currentIndex];
+      const totalContacts = contacts.length;
+
+      const socialLinks = contact.socialLinks as any;
       let socialText = '';
       
       if (socialLinks) {
@@ -502,18 +522,47 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
         if (socialLinks.telegram) socialText += `📱 [Telegram](${socialLinks.telegram})\n`;
       }
 
-      const message = `📞 **Контакты фитнес-клуба**
+      let message = '';
+      
+      if (totalContacts > 1) {
+        message = `📞 **Контакты фитнес-клуба** (${currentIndex + 1}/${totalContacts})
 
-📱 **Телефон:** ${contacts.phone}
-📍 **Адрес:** ${contacts.address}
+📱 **Телефон:** ${contact.phone}
+📍 **Адрес:** ${contact.address}
 
-${socialText}
+${socialText}`;
+      } else {
+        message = `📞 **Контакты фитнес-клуба**
 
-🗺️ [Посмотреть на карте](${contacts.mapLink})`;
+📱 **Телефон:** ${contact.phone}
+📍 **Адрес:** ${contact.address}
 
-      const keyboard = {
-        inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
-      };
+${socialText}`;
+      }
+
+      if (contact.mapLink) {
+        message += `\n🗺️ [Посмотреть на карте](${contact.mapLink})`;
+      }
+
+      // Создаем клавиатуру с навигацией
+      const keyboard: any = { inline_keyboard: [] };
+
+      // Кнопки навигации (только если контактов больше одного)
+      if (totalContacts > 1) {
+        const navButtons = [];
+        if (currentIndex > 0) {
+          navButtons.push({ text: '⬅️ Предыдущий', callback_data: 'contacts_prev' });
+        }
+        if (currentIndex < totalContacts - 1) {
+          navButtons.push({ text: 'Следующий ➡️', callback_data: 'contacts_next' });
+        }
+        if (navButtons.length > 0) {
+          keyboard.inline_keyboard.push(navButtons);
+        }
+      }
+
+      // Кнопка "Назад в меню"
+      keyboard.inline_keyboard.push([{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]);
 
       await this.sendTextMessage(chatId, message, keyboard);
     } catch (error) {
@@ -523,6 +572,26 @@ ${socialText}
       if (!edited) {
         await this.sendMessage(chatId, errorMessage);
       }
+    }
+  }
+
+  // Предыдущий контакт
+  private async handleContactsPrev(chatId: number) {
+    const currentIndex = this.contactsPage.get(chatId) || 0;
+    if (currentIndex > 0) {
+      this.contactsPage.set(chatId, currentIndex - 1);
+      await this.showContacts(chatId);
+    }
+  }
+
+  // Следующий контакт
+  private async handleContactsNext(chatId: number) {
+    const contacts = await prisma.contact.findMany();
+    const currentIndex = this.contactsPage.get(chatId) || 0;
+    
+    if (currentIndex < contacts.length - 1) {
+      this.contactsPage.set(chatId, currentIndex + 1);
+      await this.showContacts(chatId);
     }
   }
 
