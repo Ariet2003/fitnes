@@ -47,7 +47,9 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
   const [lastScanned, setLastScanned] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [isBlocked, setIsBlocked] = useState(false); // Глобальная блокировка сканирования
   const controlsRef = useRef<any>(null);
+  const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
 
   // Инициализация сканера
   useEffect(() => {
@@ -87,98 +89,57 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     }
   }, [isMinimized, isScanning]);
 
-  // Функция для привлечения внимания к вкладке
-  const focusTab = useCallback(() => {
+  // Простая функция уведомления
+  const showNotification = useCallback((title: string, body: string) => {
     try {
-      // 1. Фокусируем окно браузера
-      window.focus();
-      
-      // 2. Показываем уведомление браузера (если разрешено)
+      // 1. Простое браузерное уведомление
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('QR-код отсканирован!', {
-          body: 'Клиент найден. Требуется подтверждение посещения.',
+        new Notification(title, {
+          body,
           icon: '/favicon.ico',
-          tag: 'qr-scan',
-          requireInteraction: true
+          tag: 'qr-scan'
         });
       }
       
-      // 3. Меняем заголовок вкладки для привлечения внимания
-      const originalTitle = document.title;
-      let blinkCount = 0;
-      const blinkInterval = setInterval(() => {
-        document.title = blinkCount % 2 === 0 ? '🔴 QR СКАНИРОВАНИЕ!' : originalTitle;
-        blinkCount++;
-        if (blinkCount >= 10) { // Мигаем 5 раз
-          clearInterval(blinkInterval);
-          document.title = originalTitle;
-        }
-      }, 500);
+      // 2. Фокус окна
+      if (window.focus) {
+        window.focus();
+      }
       
-      // 4. Воспроизводим звуковой сигнал
+      // 3. Простое мигание заголовка
+      const originalTitle = document.title;
+      document.title = `🚨 ${title}`;
+      setTimeout(() => {
+        document.title = originalTitle;
+      }, 3000);
+      
+      // 4. Простой звук
       try {
-        // Создаем простой звуковой сигнал
-        const playNotificationSound = () => {
-          const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-          
-          // Первый тон
-          const oscillator1 = audioContext.createOscillator();
-          const gainNode1 = audioContext.createGain();
-          oscillator1.connect(gainNode1);
-          gainNode1.connect(audioContext.destination);
-          oscillator1.frequency.value = 800;
-          gainNode1.gain.setValueAtTime(0, audioContext.currentTime);
-          gainNode1.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01);
-          gainNode1.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
-          oscillator1.start(audioContext.currentTime);
-          oscillator1.stop(audioContext.currentTime + 0.2);
-          
-          // Второй тон (чуть позже)
-          const oscillator2 = audioContext.createOscillator();
-          const gainNode2 = audioContext.createGain();
-          oscillator2.connect(gainNode2);
-          gainNode2.connect(audioContext.destination);
-          oscillator2.frequency.value = 1000;
-          gainNode2.gain.setValueAtTime(0, audioContext.currentTime + 0.3);
-          gainNode2.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.31);
-          gainNode2.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.5);
-          oscillator2.start(audioContext.currentTime + 0.3);
-          oscillator2.stop(audioContext.currentTime + 0.5);
-        };
-        
-        playNotificationSound();
-      } catch (audioError) {
-        console.warn('Не удалось воспроизвести звук:', audioError);
-        // Альтернативный метод - используем существующий звук браузера
-        try {
-          const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmY');
-          audio.volume = 0.1;
-          audio.play().catch(() => {});
-        } catch {
-          // Если и это не работает, просто игнорируем
-        }
+        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmY');
+        audio.volume = 0.1;
+        audio.play().catch(() => {});
+      } catch (e) {
+        console.log('Звук недоступен');
       }
       
     } catch (error) {
-      console.warn('Ошибка при попытке привлечь внимание:', error);
+      console.warn('Ошибка уведомления:', error);
     }
   }, []);
 
   const validateAndProcessQR = useCallback(async (telegramId: string) => {
     try {
-      // Предотвращаем повторное сканирование того же QR-кода в течение 3 секунд
-      if (lastScanned === telegramId || cooldown) {
+      // Проверяем глобальную блокировку
+      if (isBlocked) {
+        console.log('🚫 Сканирование глобально заблокировано');
         return;
       }
 
-      setLastScanned(telegramId);
-      setCooldown(true);
+      console.log('🔒 Блокируем сканирование и обрабатываем QR-код:', telegramId);
       
-      // Убираем кулдаун через 3 секунды
-      setTimeout(() => {
-        setCooldown(false);
-        setLastScanned(null);
-      }, 3000);
+      // Полностью блокируем сканирование
+      setIsBlocked(true);
+      setLastScanned(telegramId);
 
       const response = await fetch('/api/visits', {
         method: 'POST',
@@ -188,34 +149,31 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
         body: JSON.stringify({ telegramId }),
       });
 
-      const result = await response.json();
-      setScanResult(result);
-      setShowVisitModal(true);
+             const result = await response.json();
+       setScanResult(result);
+       setShowVisitModal(true);
 
-      // Привлекаем внимание к вкладке
-      focusTab();
+       // Показываем уведомление
+       if (result.success) {
+         showNotification('QR найден!', `Клиент: ${result.client?.fullName || 'Неизвестен'}`);
+       } else {
+         showNotification('Ошибка доступа', result.error || 'Проблема с абонементом');
+       }
 
-      // Паузим сканирование на время показа модального окна
-      pauseScanning();
-
-      if (onScanResult) {
-        onScanResult(telegramId);
-      }
+       if (onScanResult) {
+         onScanResult(telegramId);
+       }
     } catch (error) {
       console.error('Ошибка при обработке QR-кода:', error);
       setScanResult({
         success: false,
         error: 'Ошибка при обработке QR-кода',
         errorType: 'PROCESSING_ERROR'
-      });
-      setShowVisitModal(true);
-      
-      // Привлекаем внимание даже при ошибке
-      focusTab();
-      
-      pauseScanning();
-    }
-  }, [lastScanned, cooldown, onScanResult, focusTab]);
+             });
+       setShowVisitModal(true);
+       showNotification('Ошибка сканирования', 'Не удалось обработать QR-код');
+     }
+   }, [isBlocked, onScanResult, showNotification]);
 
   const startScanning = async () => {
     console.log('🎥 Попытка запуска сканера...', {
@@ -264,30 +222,47 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
       controlsRef.current = await codeReader.current.decodeFromVideoDevice(
         null,
         hiddenVideoRef.current,
-        (result, error) => {
-          if (result) {
-            const scannedText = result.getText();
-            console.log('📋 QR Code найден:', scannedText);
-            
-            // Проверяем, что это похоже на telegram ID (число)
-            if (/^\d+$/.test(scannedText)) {
-              console.log('✅ Валидный telegram ID:', scannedText);
-              validateAndProcessQR(scannedText);
-            } else {
-              console.log('⚠️ Неподходящий формат QR-кода:', scannedText);
-            }
-          }
-          
-          if (error && error.name !== 'NotFoundException') {
-            console.warn('⚠️ Ошибка сканирования:', error);
-          }
-        }
+                 (result, error) => {
+           if (result) {
+             try {
+               const scannedText = result.getText();
+               console.log('📋 QR Code найден:', scannedText);
+               
+               // Проверяем, что это похоже на telegram ID (число)
+               if (/^\d+$/.test(scannedText)) {
+                 console.log('✅ Валидный telegram ID:', scannedText);
+                 
+                 // Проверяем блокировку перед обработкой
+                 if (!isBlocked) {
+                   validateAndProcessQR(scannedText);
+                 } else {
+                   console.log('🚫 Сканирование заблокировано - модальное окно открыто');
+                 }
+               } else {
+                 console.log('⚠️ Неподходящий формат QR-кода:', scannedText);
+                 // Можно добавить краткое уведомление о неправильном формате
+                 if (scannedText.length > 0) {
+                   console.log('🔍 Найден QR-код:', scannedText, '(не telegram ID)');
+                 }
+               }
+             } catch (resultError) {
+               console.error('Ошибка при обработке результата сканирования:', resultError);
+             }
+           }
+           
+           if (error && error.name !== 'NotFoundException') {
+             console.warn('⚠️ Ошибка сканирования:', error);
+           }
+         }
       );
       
       console.log('✅ Сканирование запущено успешно');
       setIsScanning(true);
       setIsPaused(false);
       setIsInitializing(false);
+      
+      // Запускаем периодическую проверку работоспособности
+      startHealthCheck();
     } catch (error: any) {
       console.error('❌ Ошибка запуска сканера:', error);
       setHasPermission(false);
@@ -308,8 +283,34 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     }
   };
 
+  // Функция проверки работоспособности
+  const startHealthCheck = () => {
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current);
+    }
+    
+    healthCheckRef.current = setInterval(() => {
+      if (isScanning && hiddenVideoRef.current) {
+        // Проверяем, что видео поток активен
+        const stream = hiddenVideoRef.current.srcObject as MediaStream;
+        if (!stream || !stream.active) {
+          console.warn('⚠️ Видео поток неактивен, перезапускаем сканирование...');
+          stopScanning();
+          setTimeout(startScanning, 1000);
+        }
+      }
+    }, 10000); // Проверяем каждые 10 секунд
+  };
+
   const stopScanning = () => {
     console.log('🛑 Остановка сканирования...');
+    
+    // Останавливаем проверку работоспособности
+    if (healthCheckRef.current) {
+      clearInterval(healthCheckRef.current);
+      healthCheckRef.current = null;
+    }
+    
     if (controlsRef.current) {
       controlsRef.current.stop();
       controlsRef.current = null;
@@ -379,11 +380,10 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
           subscription: scanResult.subscription
         });
         
-        // Закрываем модальное окно через 2 секунды
-        setTimeout(() => {
-          setShowVisitModal(false);
-          resumeScanning();
-        }, 2000);
+                 // Закрываем модальное окно через 2 секунды
+         setTimeout(() => {
+           closeModal();
+         }, 2000);
       } else {
         // Показываем ошибку
         setScanResult({
@@ -403,9 +403,15 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
   };
 
   const closeModal = () => {
+    console.log('🔓 Закрытие модального окна и разблокировка сканирования');
     setShowVisitModal(false);
     setScanResult(null);
-    resumeScanning();
+    
+    // Полностью разблокируем сканирование
+    setIsBlocked(false);
+    setLastScanned(null);
+    
+    console.log('✅ Сканирование разблокировано и готово к работе');
   };
 
   // Не показываем сканер если он отключен
@@ -513,23 +519,28 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
                 {/* Статус */}
                 <div className="absolute bottom-2 left-2 right-2">
                   <div className="bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded text-center">
-                    {error ? (
-                      <span className="text-red-400">{error}</span>
-                    ) : isInitializing ? (
-                      <span className="text-blue-400 flex items-center justify-center">
-                        <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-400 mr-1"></div>
-                        Инициализация...
-                      </span>
-                    ) : isPaused ? (
-                      <span className="text-yellow-400">Приостановлено</span>
-                    ) : isScanning ? (
-                      <span className="text-green-400 flex items-center justify-center">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></div>
-                        Сканирование активно
-                      </span>
-                    ) : (
-                      <span className="text-gray-400">Готов к запуску</span>
-                    )}
+                                         {error ? (
+                       <span className="text-red-400">{error}</span>
+                     ) : isInitializing ? (
+                       <span className="text-blue-400 flex items-center justify-center">
+                         <div className="animate-spin rounded-full h-3 w-3 border-b border-blue-400 mr-1"></div>
+                         Инициализация...
+                       </span>
+                     ) : isBlocked ? (
+                       <span className="text-orange-400 flex items-center justify-center">
+                         <div className="w-2 h-2 bg-orange-500 rounded-full mr-1"></div>
+                         Заблокировано
+                       </span>
+                     ) : isPaused ? (
+                       <span className="text-yellow-400">Приостановлено</span>
+                     ) : isScanning ? (
+                       <span className="text-green-400 flex items-center justify-center">
+                         <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-1"></div>
+                         Сканирование активно
+                       </span>
+                     ) : (
+                       <span className="text-gray-400">Готов к запуску</span>
+                     )}
                   </div>
                 </div>
               </div>
