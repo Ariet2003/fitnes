@@ -54,8 +54,23 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
   const [cooldown, setCooldown] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false); // Глобальная блокировка сканирования
+  const [isMobile, setIsMobile] = useState(false);
   const controlsRef = useRef<any>(null);
   const healthCheckRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Проверка мобильного устройства
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640); // sm breakpoint в Tailwind
+    };
+
+    // Первоначальная проверка
+    checkMobile();
+
+    // Слушаем изменения размера окна
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // Инициализация сканера
   useEffect(() => {
@@ -457,8 +472,8 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     }
   }, [validateAndProcessQR]);
 
-  // Не показываем сканер если он отключен
-  if (!isEnabled) {
+  // Не показываем сканер если он отключен или на мобильных устройствах
+  if (!isEnabled || isMobile) {
     return null;
   }
 
@@ -621,3 +636,4 @@ export default function QRScanner({ isEnabled, onScanResult }: QRScannerProps) {
     </>
   );
 }
+

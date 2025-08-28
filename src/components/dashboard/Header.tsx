@@ -103,10 +103,10 @@ export default function Header({ onToggleSidebar, isQRScannerEnabled, onToggleQR
 
       {/* Правая часть */}
       <div className="flex items-center space-x-2 sm:space-x-4">
-        {/* QR Scanner Toggle */}
+        {/* QR Scanner Toggle - скрыто на мобильных устройствах */}
         <button
           onClick={onToggleQRScanner}
-          className={`relative p-1.5 sm:p-2 rounded-lg transition-all duration-200 group ${
+          className={`hidden sm:flex relative p-1.5 sm:p-2 rounded-lg transition-all duration-200 group ${
             isQRScannerEnabled 
               ? 'text-green-400 bg-green-900/50 hover:bg-green-900/70' 
               : 'text-gray-300 hover:text-white hover:bg-gray-700'

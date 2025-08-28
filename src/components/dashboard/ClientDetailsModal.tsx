@@ -11,7 +11,10 @@ import {
   Edit3,
   Trash2,
   MessageSquare,
-  QrCode
+  QrCode,
+  Snowflake,
+  CheckCircle,
+  Clock
 } from 'lucide-react';
 import Image from 'next/image';
 import SubscriptionManagement from './SubscriptionManagement';
@@ -82,6 +85,10 @@ export default function ClientDetailsModal({
   const [showQRModal, setShowQRModal] = useState(false);
   const [qrUrl, setQrUrl] = useState<string>('');
   const [qrLoading, setQrLoading] = useState(false);
+  const [isMarking, setIsMarking] = useState(false);
+  const [isFreezing, setIsFreezing] = useState(false);
+  const [isUnfreezing, setIsUnfreezing] = useState(false);
+  const [visitData, setVisitData] = useState<any>(null);
   const [editForm, setEditForm] = useState({
     fullName: '',
     phone: '',
@@ -153,6 +160,15 @@ export default function ClientDetailsModal({
       closeCamera();
     }
   }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Проверяем статус клиента при открытии модального окна
+  useEffect(() => {
+    if (isOpen && client?.telegramId) {
+      checkClientStatus();
+      // Также проверяем, не нужно ли завершить абонемент по сроку действия
+      checkAndCompleteSubscription();
+    }
+  }, [isOpen, client?.telegramId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -507,6 +523,173 @@ export default function ClientDetailsModal({
     }
   };
 
+  // Функция для проверки статуса клиента
+  const checkClientStatus = async () => {
+    if (!client?.telegramId) return null;
+
+    try {
+      const response = await fetch('/api/visits', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ telegramId: client.telegramId }),
+      });
+
+      const result = await response.json();
+      setVisitData(result);
+      return result;
+    } catch (error) {
+      console.error('Ошибка при проверке статуса:', error);
+      return null;
+    }
+  };
+
+  // Функция для отметки посещения
+  const handleMarkVisit = async () => {
+    if (!client?.telegramId) return;
+
+    setIsMarking(true);
+    try {
+      const response = await fetch('/api/visits', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ telegramId: client.telegramId }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Обновляем данные клиента
+        await loadClientDetails();
+        // Обновляем статус
+        await checkClientStatus();
+        
+        // Проверяем, нужно ли завершить абонемент
+        await checkAndCompleteSubscription();
+        
+        // Уведомление уже отправлено в API /api/visits
+      } else {
+        console.error('Ошибка при отметке посещения:', result.error);
+      }
+    } catch (error) {
+      console.error('Ошибка при отметке посещения:', error);
+    } finally {
+      setIsMarking(false);
+    }
+  };
+
+  // Функция для заморозки дня
+  const handleFreeze = async () => {
+    if (!client?.telegramId) return;
+
+    setIsFreezing(true);
+    try {
+      const response = await fetch('/api/visits', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ telegramId: client.telegramId, action: 'freeze' }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Обновляем данные клиента
+        await loadClientDetails();
+        // Обновляем статус
+        await checkClientStatus();
+      } else {
+        console.error('Ошибка при заморозке дня:', result.error);
+      }
+    } catch (error) {
+      console.error('Ошибка при заморозке:', error);
+    } finally {
+      setIsFreezing(false);
+    }
+  };
+
+  // Функция для разморозки дня
+  const handleUnfreeze = async () => {
+    if (!client?.telegramId) return;
+
+    setIsUnfreezing(true);
+    try {
+      const response = await fetch('/api/visits', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ telegramId: client.telegramId, action: 'unfreeze' }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Обновляем данные клиента
+        await loadClientDetails();
+        // Обновляем статус
+        await checkClientStatus();
+      } else {
+        console.error('Ошибка при разморозке:', result.error);
+      }
+    } catch (error) {
+      console.error('Ошибка при разморозке:', error);
+    } finally {
+      setIsUnfreezing(false);
+    }
+  };
+
+  // Функция для проверки и завершения абонемента
+  const checkAndCompleteSubscription = async () => {
+    if (!client?.id) return;
+
+    try {
+      // Получаем актуальные данные об абонементе
+      const response = await fetch(`/api/clients/${client.id}`);
+      const clientData = await response.json();
+      
+      if (clientData.subscriptions && clientData.subscriptions.length > 0) {
+        const activeSubscription = clientData.subscriptions.find((sub: any) => sub.status === 'active');
+        
+        if (activeSubscription) {
+          const now = new Date();
+          const endDate = new Date(activeSubscription.endDate);
+          
+          // Проверяем срок действия или количество посещений
+          const shouldComplete = 
+            activeSubscription.remainingDays === 0 || // Закончились посещения
+            now > endDate; // Истек срок действия
+          
+          if (shouldComplete) {
+            // Завершаем абонемент
+            const updateResponse = await fetch(`/api/subscriptions/${activeSubscription.id}`, {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ status: 'completed' }),
+            });
+
+            if (updateResponse.ok) {
+              const reason = now > endDate ? 'истек срок действия' : 'закончились посещения';
+              console.log(`Абонемент автоматически завершен - ${reason}`);
+              // Перезагружаем данные клиента
+              await loadClientDetails();
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка при проверке завершения абонемента:', error);
+    }
+  };
+
+
+
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('ru-RU', {
       day: '2-digit',
@@ -516,7 +699,11 @@ export default function ClientDetailsModal({
   };
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('ru-RU', {
+    // Время уже сохранено с +6 часов в БД, поэтому вычитаем их при отображении
+    const date = new Date(dateString);
+    const correctedDate = new Date(date.getTime() - 6 * 60 * 60 * 1000);
+    
+    return correctedDate.toLocaleString('ru-RU', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -885,33 +1072,119 @@ export default function ClientDetailsModal({
                   </div>
 
                       {/* Actions */}
-                      <div className="flex space-x-3 pt-4 border-t border-gray-700">
-                        {client.telegramId && (
-                          <button
-                            onClick={handleQRCode}
-                            disabled={qrLoading}
-                            className="flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors"
-                          >
-                            {qrLoading ? (
-                              <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                                Загрузка...
-                              </>
+                      <div className="pt-4 border-t border-gray-700">
+                        {/* Статус */}
+                        {client.telegramId && visitData && (
+                          <div className="mb-3 text-sm text-gray-400">
+                            {visitData.success ? (
+                              visitData.isFrozenToday ? 'День заморожен' : 'Доступ открыт'
                             ) : (
-                              <>
-                                <QrCode className="w-4 h-4 mr-2" />
-                                QR-код
-                              </>
+                              visitData.errorType === 'ALREADY_VISITED_TODAY' ? 'Уже отмечено сегодня' :
+                              visitData.errorType === 'OUTSIDE_WORKING_HOURS' ? 'Вне рабочих часов' :
+                              visitData.errorType === 'NO_ACTIVE_SUBSCRIPTION' ? 'Нет абонемента' :
+                              visitData.errorType === 'SUBSCRIPTION_EXPIRED' ? 'Абонемент истек' :
+                              'Доступ закрыт'
                             )}
-                          </button>
+                          </div>
                         )}
-                        <button
-                          onClick={() => setShowConfirmDelete(true)}
-                          className="flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4 mr-2" />
-                          Удалить
-                        </button>
+                        
+                        {/* Адаптивные кнопки - на мобильных по 2 в ряд */}
+                        <div className="grid grid-cols-2 lg:flex lg:flex-row gap-2">
+                          {client.telegramId && (
+                            <button
+                              onClick={handleQRCode}
+                              disabled={qrLoading}
+                              className="flex items-center justify-center px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 text-white rounded-lg transition-colors text-sm"
+                            >
+                              {qrLoading ? (
+                                <>
+                                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                  Загрузка...
+                                </>
+                              ) : (
+                                <>
+                                  <QrCode className="w-4 h-4 mr-2" />
+                                  QR-код
+                                </>
+                              )}
+                            </button>
+                          )}
+
+                          {/* Кнопки действий с посещениями */}
+                          {client.telegramId && visitData && visitData.success && (
+                            <>
+                              {/* Если день заморожен и можно разморозить */}
+                              {visitData.isFrozenToday && visitData.canUnfreeze ? (
+                                <button
+                                  onClick={handleUnfreeze}
+                                  disabled={isUnfreezing}
+                                  className="flex items-center justify-center px-3 py-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-800 text-white rounded-lg transition-colors text-sm"
+                                >
+                                  {isUnfreezing ? (
+                                    <>
+                                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                      Размораживаем...
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock className="w-4 h-4 mr-2" />
+                                      Разморозить
+                                    </>
+                                  )}
+                                </button>
+                              ) : (
+                                /* Обычные кнопки */
+                                <>
+                                  <button
+                                    onClick={handleMarkVisit}
+                                    disabled={isMarking}
+                                    className="flex items-center justify-center px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white rounded-lg transition-colors text-sm"
+                                  >
+                                    {isMarking ? (
+                                      <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                        Отмечаем...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="w-4 h-4 mr-2" />
+                                        Отметить
+                                      </>
+                                    )}
+                                  </button>
+
+                                  {visitData.canFreeze && (
+                                    <button
+                                      onClick={handleFreeze}
+                                      disabled={isFreezing}
+                                      className="flex items-center justify-center px-3 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                                    >
+                                      {isFreezing ? (
+                                        <>
+                                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                                          Замораживаем...
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Snowflake className="w-4 h-4 mr-2" />
+                                          Заморозить
+                                        </>
+                                      )}
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </>
+                          )}
+
+                          <button
+                            onClick={() => setShowConfirmDelete(true)}
+                            className="flex items-center justify-center px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors text-sm"
+                          >
+                            <Trash2 className="w-4 h-4 mr-2" />
+                            Удалить
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -934,14 +1207,24 @@ export default function ClientDetailsModal({
                     </div>
                   ) : (
                     client.visits.map((visit) => {
+                      // Дата из БД уже содержит +6 часов, работаем с ней как есть
                       const visitDate = new Date(visit.visitDate);
-                      const today = new Date();
-                      const isToday = visitDate.toDateString() === today.toDateString();
+                      
+                      // Текущее время + 6 часов (приводим к той же временной зоне что в БД)
+                      const now = new Date();
+                      const currentTimeWithOffset = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+                      
+                      // Сравниваем только даты (без времени)
+                      const visitDateOnly = new Date(visitDate.getFullYear(), visitDate.getMonth(), visitDate.getDate());
+                      const todayOnly = new Date(currentTimeWithOffset.getFullYear(), currentTimeWithOffset.getMonth(), currentTimeWithOffset.getDate());
+                      
+                      const isToday = visitDateOnly.getTime() === todayOnly.getTime();
                       const isFreezeDay = visit.isFreezeDay;
                       
                       return (
                         <div key={visit.id} className={`rounded-lg p-3 ${isFreezeDay ? 'bg-blue-900/30 border border-blue-700' : 'bg-gray-700'}`}>
-                          <div className="flex items-center justify-between">
+                          {/* Desktop layout */}
+                          <div className="hidden sm:flex items-center justify-between">
                             <div className="flex items-center space-x-3">
                               <Calendar className={`w-4 h-4 ${isFreezeDay ? 'text-blue-400' : 'text-gray-400'}`} />
                               <div>
@@ -970,6 +1253,49 @@ export default function ClientDetailsModal({
                                 <button
                                   onClick={() => handleUnfreezeDay(visit.id, visit.subscriptionId)}
                                   className="ml-2 px-2 py-1 bg-green-600 hover:bg-green-700 text-white text-xs rounded transition-colors"
+                                  title="Разморозить день"
+                                >
+                                  Разморозить
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Mobile layout */}
+                          <div className="sm:hidden space-y-3">
+                            {/* Основная информация */}
+                            <div className="flex items-center space-x-3">
+                              <Calendar className={`w-4 h-4 ${isFreezeDay ? 'text-blue-400' : 'text-gray-400'}`} />
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 flex-wrap">
+                                  <p className="text-white text-sm">
+                                    {formatDateTime(visit.visitDate)}
+                                  </p>
+                                  {isFreezeDay && (
+                                    <span className="px-2 py-1 bg-blue-600 text-blue-100 text-xs rounded-full">
+                                      Заморозка
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-gray-400 text-xs">
+                                  {visit.subscription?.tariff?.name || 'Без тарифа'}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* QR код и кнопка разморозки */}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-2">
+                                <QrCode className="w-4 h-4 text-gray-400" />
+                                <span className="text-gray-400 text-xs truncate">
+                                  {visit.qrCode}
+                                </span>
+                              </div>
+                              {/* Кнопка разморозки только для сегодняшних замороженных дней */}
+                              {isFreezeDay && isToday && (
+                                <button
+                                  onClick={() => handleUnfreezeDay(visit.id, visit.subscriptionId)}
+                                  className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs rounded-md transition-colors font-medium"
                                   title="Разморозить день"
                                 >
                                   Разморозить

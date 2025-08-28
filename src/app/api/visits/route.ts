@@ -1,5 +1,87 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { telegramService } from '@/lib/telegram';
+
+// Функция для расчета диапазона дат с учетом временной зоны +6
+function getTodayDateRange() {
+  const now = new Date();
+  // Текущая дата в +6 часовом поясе
+  const currentTimeWithOffset = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+  
+  // Начало сегодняшнего дня в +6 часовом поясе
+  const todayStart = new Date(currentTimeWithOffset.getFullYear(), currentTimeWithOffset.getMonth(), currentTimeWithOffset.getDate());
+  const todayStartWithOffset = new Date(todayStart.getTime() + 6 * 60 * 60 * 1000);
+  
+  // Начало завтрашнего дня в +6 часовом поясе  
+  const tomorrowStart = new Date(todayStartWithOffset);
+  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+  
+  console.log('📅 Date range calculation:');
+  console.log('  Current local time:', now.toISOString());
+  console.log('  Current time +6:', currentTimeWithOffset.toISOString());
+  console.log('  Today start +6:', todayStartWithOffset.toISOString());
+  console.log('  Tomorrow start +6:', tomorrowStart.toISOString());
+  
+  return {
+    offsetTime: todayStartWithOffset,
+    tomorrow: tomorrowStart
+  };
+}
+
+// Функция для отправки уведомления о скором окончании посещений
+async function sendRemainingVisitsNotification(client: any, remainingDays: number, endDate: Date) {
+  if (!client.telegramId) {
+    return;
+  }
+
+  try {
+    let message = '';
+    const endDateStr = endDate.toLocaleDateString('ru-RU');
+    
+    if (remainingDays === 3) {
+      message = `🔔 *Уведомление о скором окончании абонемента*
+
+Уважаемый ${client.fullName}!
+
+После сегодняшнего посещения у вас останется всего *3 посещения*. 
+📅 Ваш абонемент действует до ${endDateStr}.
+
+💡 Рекомендуем заранее позаботиться о продлении абонемента, чтобы не прерывать тренировки!`;
+
+    } else if (remainingDays === 2) {
+      message = `🔔 *Внимание! Осталось 2 посещения*
+
+${client.fullName}, после сегодняшнего посещения у вас останется только *2 посещения*.
+📅 Абонемент действует до ${endDateStr}.
+
+⚠️ Рекомендуем приобрести новый абонемент сразу после окончания текущего!`;
+
+            } else if (remainingDays === 1) {
+          message = `🚨 *ОСТАЛОСЬ ПОСЛЕДНЕЕ ПОСЕЩЕНИЕ!*
+
+${client.fullName}, после сегодняшнего посещения у вас останется только *1 посещение*!
+📅 Ваш абонемент действует до ${endDateStr}.
+
+🔥 *ВАЖНО!* Сразу после окончания текущего абонемента купите новый, чтобы продолжить тренировки без перерыва.
+
+Свяжитесь с администратором для оформления нового абонемента! 💪`;
+    }
+
+    if (message) {
+      const result = await telegramService.sendMessage(client.telegramId, message, {
+        parse_mode: 'Markdown'
+      });
+
+      if (result.ok) {
+        console.log(`✅ Уведомление отправлено клиенту ${client.fullName} (${client.telegramId}) о ${remainingDays} оставшихся посещениях`);
+      } else {
+        console.error(`❌ Ошибка отправки уведомления клиенту ${client.fullName}:`, result.description);
+      }
+    }
+  } catch (error) {
+    console.error('Ошибка при отправке уведомления о посещениях:', error);
+  }
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,19 +122,29 @@ export async function POST(request: NextRequest) {
     if (!activeSubscription) {
       return NextResponse.json({
         success: false,
-        error: 'У клиента нет активного абонемента',
-        errorType: 'NO_ACTIVE_SUBSCRIPTION',
-        client: {
-          id: client.id,
-          fullName: client.fullName,
-          phone: client.phone
-        }
-      });
-    }
+          error: 'У клиента нет активного абонемента',
+          errorType: 'NO_ACTIVE_SUBSCRIPTION',
+          client: {
+            id: client.id,
+            fullName: client.fullName,
+            phone: client.phone
+          }
+        });
+      }
 
-    // Проверим срок действия абонемента
+      // Проверим срок действия абонемента
     const now = new Date();
     if (now > activeSubscription.endDate) {
+      // Автоматически завершаем абонемент если срок истек
+      await prisma.subscription.update({
+        where: { id: activeSubscription.id },
+        data: {
+          status: 'completed'
+        }
+      });
+      
+      console.log(`Абонемент ${activeSubscription.id} автоматически завершен - истек срок действия (endDate: ${activeSubscription.endDate})`);
+      
       return NextResponse.json({
         success: false,
         error: 'Срок действия абонемента истек',
@@ -95,12 +187,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Проверим, не было ли уже посещения сегодня (с учетом временной зоны +6)
-    const today = new Date();
-    // Переводим время в +6 часовой пояс
-    const offsetTime = new Date(today.getTime() + 6 * 60 * 60 * 1000);
-    offsetTime.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(offsetTime);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { offsetTime, tomorrow } = getTodayDateRange();
 
     const todayVisit = await prisma.visit.findFirst({
       where: {
@@ -224,12 +311,27 @@ export async function PUT(request: NextRequest) {
 
     const activeSubscription = client.subscriptions[0];
 
+    // Проверим срок действия абонемента
+    const now = new Date();
+    if (now > activeSubscription.endDate) {
+      // Автоматически завершаем абонемент если срок истек
+      await prisma.subscription.update({
+        where: { id: activeSubscription.id },
+        data: {
+          status: 'completed'
+        }
+      });
+      
+      console.log(`Абонемент ${activeSubscription.id} автоматически завершен при попытке отметки - истек срок действия (endDate: ${activeSubscription.endDate})`);
+      
+      return NextResponse.json(
+        { error: 'Срок действия абонемента истек' },
+        { status: 400 }
+      );
+    }
+
     // Проверим, не было ли уже посещения сегодня (с учетом временной зоны +6)
-    const today = new Date();
-    const offsetTime = new Date(today.getTime() + 6 * 60 * 60 * 1000);
-    offsetTime.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(offsetTime);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { offsetTime, tomorrow } = getTodayDateRange();
 
     const todayVisit = await prisma.visit.findFirst({
       where: {
@@ -258,14 +360,20 @@ export async function PUT(request: NextRequest) {
         clientId: client.id,
         subscriptionId: activeSubscription.id,
         visitDate: visitDateTime,
-        qrCode: telegramId, // Используем telegram ID как QR код
+        qrCode: `${telegramId}_${Date.now()}`, // Уникальный QR код для каждого посещения
         isFreezeDay: false
       }
     });
 
     // Уменьшаем количество оставшихся дней
     if (activeSubscription.remainingDays > 0) {
-      await prisma.subscription.update({
+      // Отправляем уведомление ПЕРЕД уменьшением, если после этого посещения останется 3, 2 или 1 день
+      const remainingAfterVisit = activeSubscription.remainingDays - 1;
+      if (remainingAfterVisit <= 3 && remainingAfterVisit > 0) {
+        await sendRemainingVisitsNotification(client, remainingAfterVisit, activeSubscription.endDate);
+      }
+
+      const updatedSubscription = await prisma.subscription.update({
         where: { id: activeSubscription.id },
         data: {
           remainingDays: {
@@ -273,6 +381,17 @@ export async function PUT(request: NextRequest) {
           }
         }
       });
+
+      // Если остался 0 дней, завершаем абонемент
+      if (updatedSubscription.remainingDays === 0) {
+        await prisma.subscription.update({
+          where: { id: activeSubscription.id },
+          data: {
+            status: 'completed'
+          }
+        });
+        console.log(`Абонемент ${activeSubscription.id} автоматически завершен - закончились посещения`);
+      }
     }
 
     return NextResponse.json({
@@ -327,12 +446,28 @@ export async function PATCH(request: NextRequest) {
     }
 
     const activeSubscription = client.subscriptions[0];
+    
+    // Проверим срок действия абонемента
+    const now = new Date();
+    if (now > activeSubscription.endDate) {
+      // Автоматически завершаем абонемент если срок истек
+      await prisma.subscription.update({
+        where: { id: activeSubscription.id },
+        data: {
+          status: 'completed'
+        }
+      });
+      
+      console.log(`Абонемент ${activeSubscription.id} автоматически завершен при попытке заморозки/разморозки - истек срок действия (endDate: ${activeSubscription.endDate})`);
+      
+      return NextResponse.json(
+        { error: 'Срок действия абонемента истек' },
+        { status: 400 }
+      );
+    }
+    
     // Применяем временную зону +6
-    const today = new Date();
-    const offsetTime = new Date(today.getTime() + 6 * 60 * 60 * 1000);
-    offsetTime.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(offsetTime);
-    tomorrow.setDate(tomorrow.getDate() + 1);
+    const { offsetTime, tomorrow } = getTodayDateRange();
 
     if (action === 'freeze') {
       // Проверяем лимит заморозки
@@ -351,7 +486,7 @@ export async function PATCH(request: NextRequest) {
           clientId: client.id,
           subscriptionId: activeSubscription.id,
           visitDate: freezeDateTime,
-          qrCode: telegramId,
+          qrCode: `${telegramId}_freeze_${Date.now()}`, // Уникальный QR код для заморозки
           isFreezeDay: true
         }
       });
