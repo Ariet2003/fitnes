@@ -402,7 +402,7 @@ export default function TariffsPage() {
                   <span className="text-white font-medium">{tariff.durationDays} дней</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-400">Время работы</span>
+                  <span className="text-gray-400">Время доступа</span>
                   <span className="text-white font-medium">{tariff.startTime} - {tariff.endTime}</span>
                 </div>
                 <div className="flex items-center justify-between">

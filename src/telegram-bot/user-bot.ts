@@ -12,6 +12,7 @@ class UserTelegramBot {
   private productsPage: Map<number, number> = new Map(); // chatId -> currentProductIndex
   private productPhotoPage: Map<number, number> = new Map(); // chatId -> currentPhotoIndex
   private feedbackMode: Map<number, boolean> = new Map(); // chatId -> isInFeedbackMode
+  private subscriptionsPage: Map<number, number> = new Map(); // chatId -> currentSubscriptionIndex
 
   constructor() {
     this.init();
@@ -117,8 +118,23 @@ class UserTelegramBot {
           case 'subscription_history':
             await this.handleSubscriptionHistory(chatId, telegramId);
             break;
+          case 'available_subscriptions':
+            await this.handleAvailableSubscriptions(chatId);
+            break;
+          case 'subscriptions_prev':
+            await this.handleSubscriptionsPrev(chatId);
+            break;
+          case 'subscriptions_next':
+            await this.handleSubscriptionsNext(chatId);
+            break;
           case 'qr_code':
             await this.handleQRCode(chatId, telegramId);
+            break;
+          case 'freeze_day':
+            await this.handleFreezeDay(chatId, telegramId);
+            break;
+          case 'unfreeze_day':
+            await this.handleUnfreezeDay(chatId, telegramId);
             break;
           case 'feedback':
             await this.handleFeedback(chatId, telegramId);
@@ -348,19 +364,19 @@ class UserTelegramBot {
 
       const message = `📝 Информация о вашем абонементе:
 
-🏷️ **Тариф:** ${tariff.name}
-💰 **Стоимость:** ${tariff.price} ₽
-⏰ **Время работы:** ${tariff.startTime} - ${tariff.endTime}
-📅 **Старт абонемента:** ${startDate}
-📅 **Действует до:** ${endDate}
-⏳ **Осталось посещений:** ${remainingVisits}
-🧊 **Использовано заморозок:** ${subscription.freezeUsed}/${tariff.freezeLimit}
+🏷️ **Название:** ${tariff.name}
+💰 **Цена:** ${tariff.price} ₽
+📅 **Срок действия:** ${tariff.duration} мес. (до ${endDate})
+🔢 **Количество посещений:** ${tariff.durationDays} дней
+⏰ **Время доступа:** ${tariff.startTime} - ${tariff.endTime}
+🧊 **Заморозки:** ${subscription.freezeUsed}/${tariff.freezeLimit} использовано
 
 ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истекает! Не забудьте продлить.' : ''}`;
 
       const keyboard = {
         inline_keyboard: [
           [{ text: '📜 История абонементов', callback_data: 'subscription_history' }],
+          [{ text: '📋 Доступные абонементы', callback_data: 'available_subscriptions' }],
           [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
         ]
       };
@@ -423,6 +439,7 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
 
       const keyboard = {
         inline_keyboard: [
+          [{ text: '📜 Доступные абонементы', callback_data: 'available_subscriptions' }],
           [{ text: '🔙 К абонементу', callback_data: 'subscription' }],
           [{ text: '🏠 Главное меню', callback_data: 'back_to_menu' }]
         ]
@@ -479,13 +496,37 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
       // Получаем или создаем QR-код
       const qrUrl = await getOrCreateQRCode(client.id);
       
-      const message = `📱 Ваш QR-код для входа в фитнес-клуб`;
+      // Получаем информацию о заморозке для кнопок
+      const freezeInfo = await this.getFreezeInfo(client.id);
+      
+      let message = `📱 Ваш QR-код для входа в фитнес-клуб`;
+      
+      // Добавляем информацию о заморозке
+      if (freezeInfo.hasTodayFreeze) {
+        message += `\n\n🧊 Сегодня у вас заморозка`;
+      } else if (freezeInfo.canFreeze) {
+        message += `\n\n🧊 Можно заморозить сегодня (${freezeInfo.freezeUsed}/${freezeInfo.freezeLimit})`;
+      } else if (freezeInfo.freezeUsed >= freezeInfo.freezeLimit) {
+        message += `\n\n⚠️ Лимит заморозок исчерпан (${freezeInfo.freezeUsed}/${freezeInfo.freezeLimit})`;
+      }
 
-      const keyboard = {
-        inline_keyboard: [
-          [{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]
-        ]
-      };
+      const keyboard: any = { inline_keyboard: [] };
+      
+      // Кнопки заморозки
+      if (freezeInfo.hasTodayFreeze) {
+        keyboard.inline_keyboard.push([
+          { text: '🔥 Разморозить сегодня', callback_data: 'unfreeze_day' }
+        ]);
+      } else if (freezeInfo.canFreeze) {
+        keyboard.inline_keyboard.push([
+          { text: '🧊 Заморозить сегодня', callback_data: 'freeze_day' }
+        ]);
+      }
+      
+      // Кнопка назад
+      keyboard.inline_keyboard.push([
+        { text: '🔙 Назад в меню', callback_data: 'back_to_menu' }
+      ]);
 
       // Редактируем сообщение, заменяя его на QR-код
       const edited = await this.editLastMediaMessage(chatId, qrUrl, message, keyboard);
@@ -1131,6 +1172,263 @@ ${socialText}`;
     } catch (error) {
       console.error('Ошибка при получении URL приветственной картинки:', error);
       return null;
+    }
+  }
+
+  // Получение информации о возможностях заморозки
+  private async getFreezeInfo(clientId: number) {
+    try {
+      const client = await prisma.client.findUnique({
+        where: { id: clientId },
+        include: {
+          subscriptions: {
+            where: { status: 'active' },
+            include: { tariff: true },
+            orderBy: { endDate: 'desc' }
+          }
+        }
+      });
+
+      if (!client || !client.subscriptions[0]) {
+        return { canFreeze: false, hasTodayFreeze: false, freezeUsed: 0, freezeLimit: 0 };
+      }
+
+      const activeSubscription = client.subscriptions[0];
+      
+      // Проверяем, есть ли заморозка на сегодня
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const todayFreeze = await prisma.visit.findFirst({
+        where: {
+          clientId: clientId,
+          subscriptionId: activeSubscription.id,
+          visitDate: {
+            gte: today,
+            lt: tomorrow
+          },
+          isFreezeDay: true
+        }
+      });
+
+      const canFreeze = activeSubscription.freezeUsed < activeSubscription.tariff.freezeLimit && !todayFreeze;
+      
+      return {
+        canFreeze,
+        hasTodayFreeze: !!todayFreeze,
+        freezeUsed: activeSubscription.freezeUsed,
+        freezeLimit: activeSubscription.tariff.freezeLimit,
+        todayFreezeId: todayFreeze?.id
+      };
+    } catch (error) {
+      console.error('Ошибка при получении информации о заморозке:', error);
+      return { canFreeze: false, hasTodayFreeze: false, freezeUsed: 0, freezeLimit: 0 };
+    }
+  }
+
+  // Обработка заморозки дня
+  private async handleFreezeDay(chatId: number, telegramId: string) {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/visits`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          telegramId,
+          action: 'freeze'
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Обновляем QR-меню с новой информацией
+        await this.handleQRCode(chatId, telegramId);
+      } else {
+        const errorMessage = `❌ ${result.error || 'Ошибка при заморозке'}`;
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🔙 Назад к QR-коду', callback_data: 'qr_code' }],
+            [{ text: '🏠 Главное меню', callback_data: 'back_to_menu' }]
+          ]
+        };
+        
+        const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, errorMessage, keyboard);
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка при заморозке дня:', error);
+      const errorMessage = '❌ Ошибка при заморозке дня';
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🔙 Назад к QR-коду', callback_data: 'qr_code' }]
+        ]
+      };
+      
+      const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+      if (!edited) {
+        await this.sendTextMessage(chatId, errorMessage, keyboard);
+      }
+    }
+  }
+
+  // Обработка разморозки дня
+  private async handleUnfreezeDay(chatId: number, telegramId: string) {
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/visits`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          telegramId,
+          action: 'unfreeze'
+        })
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        // Обновляем QR-меню с новой информацией
+        await this.handleQRCode(chatId, telegramId);
+      } else {
+        const errorMessage = `❌ ${result.error || 'Ошибка при разморозке'}`;
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🔙 Назад к QR-коду', callback_data: 'qr_code' }],
+            [{ text: '🏠 Главное меню', callback_data: 'back_to_menu' }]
+          ]
+        };
+        
+        const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+        if (!edited) {
+          await this.sendTextMessage(chatId, errorMessage, keyboard);
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка при разморозке дня:', error);
+      const errorMessage = '❌ Ошибка при разморозке дня';
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🔙 Назад к QR-коду', callback_data: 'qr_code' }]
+        ]
+      };
+      
+      const edited = await this.editLastMessage(chatId, errorMessage, keyboard);
+      if (!edited) {
+        await this.sendTextMessage(chatId, errorMessage, keyboard);
+      }
+    }
+  }
+
+  // Обработка доступных абонементов
+  private async handleAvailableSubscriptions(chatId: number) {
+    // Сбрасываем индекс при первом открытии
+    this.subscriptionsPage.set(chatId, 0);
+    await this.showAvailableSubscriptions(chatId);
+  }
+
+  // Показать доступные абонементы с пагинацией
+  private async showAvailableSubscriptions(chatId: number) {
+    try {
+      const tariffs = await prisma.tariff.findMany({
+        orderBy: { price: 'asc' }
+      });
+
+      if (!tariffs || tariffs.length === 0) {
+        const message = '❌ Доступные абонементы не найдены.';
+        const keyboard = {
+          inline_keyboard: [
+            [{ text: '🔙 К истории', callback_data: 'subscription_history' }],
+            [{ text: '🏠 Главное меню', callback_data: 'back_to_menu' }]
+          ]
+        };
+
+        await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
+        return;
+      }
+
+      const currentIndex = this.subscriptionsPage.get(chatId) || 0;
+      const tariff = tariffs[currentIndex];
+      const totalTariffs = tariffs.length;
+
+      let message = `📜 **Доступные абонементы**`;
+      
+      if (totalTariffs > 1) {
+        message += ` (${currentIndex + 1}/${totalTariffs})`;
+      }
+      
+      message += `\n\n🏷️ **Название:** ${tariff.name}`;
+      message += `\n💰 **Цена:** ${tariff.price} ₽`;
+      message += `\n📅 **Срок действия:** ${tariff.duration} мес.`;
+      message += `\n🔢 **Количество посещений:** ${tariff.durationDays} дней`;
+      message += `\n⏰ **Время доступа:** ${tariff.startTime} - ${tariff.endTime}`;
+      message += `\n🧊 **Заморозки:** ${tariff.freezeLimit} дней`;
+      
+      // Описание не предусмотрено в модели
+      if (false) {
+        // Описание не предусмотрено в модели
+      }
+
+      // Создаем клавиатуру с навигацией
+      const keyboard: any = { inline_keyboard: [] };
+
+      // Кнопки навигации (только если абонементов больше одного)
+      if (totalTariffs > 1) {
+        const navButtons = [];
+        if (currentIndex > 0) {
+          navButtons.push({ text: '⬅️ Предыдущий', callback_data: 'subscriptions_prev' });
+        }
+        if (currentIndex < totalTariffs - 1) {
+          navButtons.push({ text: 'Следующий ➡️', callback_data: 'subscriptions_next' });
+        }
+        if (navButtons.length > 0) {
+          keyboard.inline_keyboard.push(navButtons);
+        }
+      }
+
+      // Кнопки навигации
+      keyboard.inline_keyboard.push([
+        { text: '🔙 К истории', callback_data: 'subscription_history' },
+        { text: '🏠 Главное меню', callback_data: 'back_to_menu' }
+      ]);
+
+      await this.sendOrEditWithWelcomePhoto(chatId, message, keyboard);
+    } catch (error) {
+      console.error('Ошибка при получении доступных абонементов:', error);
+      const errorMessage = '❌ Ошибка при получении списка абонементов.';
+      const keyboard = {
+        inline_keyboard: [
+          [{ text: '🔙 К истории', callback_data: 'subscription_history' }],
+          [{ text: '🏠 Главное меню', callback_data: 'back_to_menu' }]
+        ]
+      };
+      await this.sendOrEditWithWelcomePhoto(chatId, errorMessage, keyboard);
+    }
+  }
+
+  // Предыдущий абонемент
+  private async handleSubscriptionsPrev(chatId: number) {
+    const currentIndex = this.subscriptionsPage.get(chatId) || 0;
+    if (currentIndex > 0) {
+      this.subscriptionsPage.set(chatId, currentIndex - 1);
+      await this.showAvailableSubscriptions(chatId);
+    }
+  }
+
+  // Следующий абонемент
+  private async handleSubscriptionsNext(chatId: number) {
+    const tariffs = await prisma.tariff.findMany();
+    const currentIndex = this.subscriptionsPage.get(chatId) || 0;
+    
+    if (currentIndex < tariffs.length - 1) {
+      this.subscriptionsPage.set(chatId, currentIndex + 1);
+      await this.showAvailableSubscriptions(chatId);
     }
   }
 
