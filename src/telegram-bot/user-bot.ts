@@ -25,7 +25,9 @@ class UserTelegramBot {
       this.bot = new TelegramBot(token, { polling: true });
       this.setupHandlers();
       this.isRunning = true;
-      console.log('🤖 Пользовательский Telegram бот запущен и готов к работе');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('🤖 Пользовательский Telegram бот запущен и готов к работе');
+      }
     } catch (error) {
       console.error('❌ Ошибка при инициализации пользовательского бота:', error);
     }
@@ -38,18 +40,25 @@ class UserTelegramBot {
     }
 
     try {
+      console.log('🔍 Поиск токена бота в базе данных...');
+      
       const setting = await prisma.setting.findUnique({
         where: { key: 'admin_bot_token' }
       });
 
-      if (!setting?.value) {
-        throw new Error('Токен пользовательского Telegram бота не найден в настройках. Убедитесь, что настройка admin_bot_token существует в таблице Setting.');
+      if (!setting) {
+        throw new Error('Настройка admin_bot_token не найдена в таблице Setting.');
       }
 
+      if (!setting.value) {
+        throw new Error('Значение токена бота пустое в настройках.');
+      }
+
+      console.log('✅ Токен бота найден в базе данных');
       this.botToken = setting.value;
       return this.botToken;
     } catch (error) {
-      console.error('Ошибка при получении токена пользовательского Telegram бота из БД:', error);
+      console.error('❌ Ошибка при получении токена пользовательского Telegram бота из БД:', error);
       throw error;
     }
   }
@@ -66,7 +75,9 @@ class UserTelegramBot {
       const lastName = msg.from?.last_name || '';
       const username = msg.from?.username || '';
 
-      console.log(`👤 Пользователь ${firstName} ${lastName} (@${username}) запустил бота. Telegram ID: ${telegramId}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`👤 Пользователь ${firstName} ${lastName} (@${username}) запустил бота. Telegram ID: ${telegramId}`);
+      }
 
       if (!telegramId) {
         await this.sendMessage(chatId, '❌ Произошла ошибка при получении вашего Telegram ID. Попробуйте еще раз.');
@@ -1231,7 +1242,7 @@ ${socialText}`;
   // Обработка заморозки дня
   private async handleFreezeDay(chatId: number, telegramId: string) {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/visits`, {
+      const response = await fetch(`${process.env.INTERNAL_API_URL || 'http://app:3000'}/api/visits`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -1280,7 +1291,7 @@ ${socialText}`;
   // Обработка разморозки дня
   private async handleUnfreezeDay(chatId: number, telegramId: string) {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/visits`, {
+      const response = await fetch(`${process.env.INTERNAL_API_URL || 'http://app:3000'}/api/visits`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json'
@@ -1625,7 +1636,9 @@ ${socialText}`;
     if (this.bot && this.isRunning) {
       this.bot.stopPolling();
       this.isRunning = false;
-      console.log('🛑 Пользовательский Telegram бот остановлен');
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('🛑 Пользовательский Telegram бот остановлен');
+      }
     }
   }
 

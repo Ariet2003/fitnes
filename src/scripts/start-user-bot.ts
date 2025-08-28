@@ -2,17 +2,23 @@
 
 import { userTelegramBot } from '../telegram-bot/user-bot';
 
-console.log('🚀 Запуск пользовательского Telegram бота...');
+if (process.env.NODE_ENV !== 'production') {
+  console.log('🚀 Запуск пользовательского Telegram бота...');
+}
 
 // Обработка сигналов для корректного завершения
 process.on('SIGINT', () => {
-  console.log('\n📧 Получен сигнал SIGINT. Останавливаем бота...');
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('\n📧 Получен сигнал SIGINT. Останавливаем бота...');
+  }
   userTelegramBot.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
-  console.log('\n📧 Получен сигнал SIGTERM. Останавливаем бота...');
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('\n📧 Получен сигнал SIGTERM. Останавливаем бота...');
+  }
   userTelegramBot.stop();
   process.exit(0);
 });
@@ -28,4 +34,6 @@ process.on('uncaughtException', (error) => {
   process.exit(1);
 });
 
-console.log('✅ Пользовательский бот запущен. Нажмите Ctrl+C для остановки.');
+if (process.env.NODE_ENV !== 'production') {
+  console.log('✅ Пользовательский бот запущен. Нажмите Ctrl+C для остановки.');
+}

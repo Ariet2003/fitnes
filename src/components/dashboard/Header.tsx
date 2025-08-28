@@ -83,9 +83,11 @@ export default function Header({ onToggleSidebar, isQRScannerEnabled, onToggleQR
       <div className="flex items-center space-x-2 sm:space-x-4">
         {/* Логотип */}
         <div className="flex items-center space-x-2 lg:space-x-3">
-          <div className="bg-blue-600 p-1.5 sm:p-2 rounded-lg sm:rounded-xl">
-            <Dumbbell className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-          </div>
+          <img 
+            src="/logo.svg" 
+            alt="FitAdmin Logo" 
+            className="w-8 h-8 sm:w-10 sm:h-10"
+          />
           <div className="hidden sm:block">
             <h1 className="text-base lg:text-lg font-bold text-white">FitAdmin</h1>
             <p className="text-xs text-gray-400">Панель управления</p>

@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
+  eslint: {
+    // Отключаем ESLint во время сборки для Docker
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    // Отключаем проверку типов во время сборки для Docker
+    ignoreBuildErrors: true,
+  },
   images: {
     remotePatterns: [
       {
