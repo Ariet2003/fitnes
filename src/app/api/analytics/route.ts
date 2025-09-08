@@ -55,7 +55,9 @@ export async function GET(request: NextRequest) {
       periodSubscriptions,
       expiredSubscriptions,
       feedbackCount,
-      newsCount
+      newsCount,
+      totalTrainers,
+      activeTrainersThisPeriod
     ] = await Promise.all([
       // Общее количество клиентов
       prisma.client.count(),
@@ -127,8 +129,31 @@ export async function GET(request: NextRequest) {
       prisma.feedback.count(),
       
       // Количество новостей
-      prisma.news.count()
+      prisma.news.count(),
+      
+      // Общее количество тренеров
+      prisma.trainer.count(),
+      
+      // Активные тренеры за период (тренеры с новыми подписками)
+      prisma.trainer.count({
+        where: {
+          subscriptions: {
+            some: {
+              createdAt: {
+                gte: startDate,
+                lte: endDate
+              }
+            }
+          }
+        }
+      })
     ]);
+
+    // Получаем общее количество продаж (подписок)
+    const totalSales = await prisma.subscription.count();
+    
+    // Продажи за текущий период
+    const salesThisPeriod = periodSubscriptions.length;
 
     // Вычисляем общую выручку
     const totalRevenue = allSubscriptions.reduce((sum, subscription) => {
@@ -285,6 +310,92 @@ export async function GET(request: NextRequest) {
       take: 10
     });
 
+    // Статистика по тренерам
+    const popularTrainers = await prisma.trainer.findMany({
+      include: {
+        _count: {
+          select: {
+            subscriptions: true
+          }
+        },
+        subscriptions: {
+          include: {
+            tariff: true
+          }
+        }
+      },
+      orderBy: {
+        subscriptions: {
+          _count: 'desc'
+        }
+      },
+      take: 5
+    });
+
+    // Выручка по тренерам
+    const trainerRevenue = popularTrainers.map(trainer => {
+      const revenue = trainer.subscriptions.reduce((sum, subscription) => {
+        return sum + (subscription.tariff ? Number(subscription.tariff.price) : 0) + Number(trainer.price);
+      }, 0);
+      
+      return {
+        id: trainer.id,
+        name: trainer.name,
+        subscriptions: trainer._count.subscriptions,
+        revenue: revenue,
+        price: Number(trainer.price)
+      };
+    });
+
+    // Распределение клиентов по тренерам
+    const trainerDistribution = await prisma.subscription.groupBy({
+      by: ['trainerId'],
+      _count: {
+        trainerId: true
+      },
+      where: {
+        status: 'active',
+        trainerId: {
+          not: null
+        }
+      }
+    });
+
+    // Получаем имена тренеров для распределения
+    const trainerNames = await prisma.trainer.findMany({
+      where: {
+        id: {
+          in: trainerDistribution.map(t => t.trainerId).filter(Boolean) as number[]
+        }
+      },
+      select: {
+        id: true,
+        name: true
+      }
+    });
+
+    // Считаем клиентов без тренера
+    const clientsWithoutTrainer = await prisma.subscription.count({
+      where: {
+        status: 'active',
+        trainerId: null
+      }
+    });
+
+    const trainerStats = [
+      ...trainerDistribution.map(stat => {
+        const trainer = trainerNames.find(t => t.id === stat.trainerId);
+        return {
+          name: trainer?.name || `Тренер ${stat.trainerId}`,
+          clients: stat._count.trainerId
+        };
+      }),
+      {
+        name: 'Без тренера',
+        clients: clientsWithoutTrainer
+      }
+    ];
+
     return NextResponse.json({
       overview: {
         totalClients,
@@ -296,7 +407,11 @@ export async function GET(request: NextRequest) {
         revenueThisPeriod,
         expiredSubscriptions,
         feedbackCount,
-        newsCount
+        newsCount,
+        totalTrainers,
+        activeTrainersThisPeriod,
+        totalSales,
+        salesThisPeriod
       },
       charts: {
         clientsGrowth: clientsGrowthData,
@@ -316,7 +431,15 @@ export async function GET(request: NextRequest) {
           id: client.id,
           fullName: client.fullName,
           visits: client._count.visits
-        }))
+        })),
+        popularTrainers: popularTrainers.map(trainer => ({
+          id: trainer.id,
+          name: trainer.name,
+          subscriptions: trainer._count.subscriptions,
+          price: Number(trainer.price)
+        })),
+        trainerRevenue,
+        trainerDistribution: trainerStats
       },
       period
     });

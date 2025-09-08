@@ -1,6 +1,6 @@
 'use client';
 
-import { TrendingUp, TrendingDown, Users, Calendar, DollarSign, MessageSquare } from 'lucide-react';
+import { TrendingUp, TrendingDown, Users, Calendar, DollarSign, MessageSquare, UserCheck, ShoppingCart } from 'lucide-react';
 
 interface OverviewData {
   totalClients: number;
@@ -13,6 +13,10 @@ interface OverviewData {
   expiredSubscriptions: number;
   feedbackCount: number;
   newsCount: number;
+  totalTrainers?: number;
+  activeTrainersThisPeriod?: number;
+  totalSales?: number;
+  salesThisPeriod?: number;
 }
 
 interface OverviewCardsProps {
@@ -48,6 +52,24 @@ export default function OverviewCards({ data, period }: OverviewCardsProps) {
       icon: Calendar,
       color: 'green',
       trend: data.activeSubscriptions > data.expiredSubscriptions ? 'up' : 'down'
+    },
+    {
+      title: 'Тренеры',
+      value: data.totalTrainers || 0,
+      change: data.activeTrainersThisPeriod || 0,
+      changeText: `${data.activeTrainersThisPeriod || 0} активных ${periodText}`,
+      icon: UserCheck,
+      color: 'cyan',
+      trend: (data.activeTrainersThisPeriod || 0) > 0 ? 'up' : 'neutral'
+    },
+    {
+      title: 'Всего продаж',
+      value: data.totalSales || 0,
+      change: data.salesThisPeriod || 0,
+      changeText: `+${data.salesThisPeriod || 0} ${periodText}`,
+      icon: ShoppingCart,
+      color: 'emerald',
+      trend: (data.salesThisPeriod || 0) > 0 ? 'up' : 'neutral'
     },
     {
       title: 'Общая выручка',
@@ -93,7 +115,9 @@ export default function OverviewCards({ data, period }: OverviewCardsProps) {
     purple: 'from-purple-500/20 to-purple-600/20 border-purple-500/30',
     orange: 'from-orange-500/20 to-orange-600/20 border-orange-500/30',
     pink: 'from-pink-500/20 to-pink-600/20 border-pink-500/30',
-    indigo: 'from-indigo-500/20 to-indigo-600/20 border-indigo-500/30'
+    indigo: 'from-indigo-500/20 to-indigo-600/20 border-indigo-500/30',
+    cyan: 'from-cyan-500/20 to-cyan-600/20 border-cyan-500/30',
+    emerald: 'from-emerald-500/20 to-emerald-600/20 border-emerald-500/30'
   };
 
   const iconColorClasses = {
@@ -102,11 +126,13 @@ export default function OverviewCards({ data, period }: OverviewCardsProps) {
     purple: 'text-purple-400',
     orange: 'text-orange-400',
     pink: 'text-pink-400',
-    indigo: 'text-indigo-400'
+    indigo: 'text-indigo-400',
+    cyan: 'text-cyan-400',
+    emerald: 'text-emerald-400'
   };
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
       {cards.map((card, index) => {
         const Icon = card.icon;
         const TrendIcon = card.trend === 'up' ? TrendingUp : card.trend === 'down' ? TrendingDown : null;

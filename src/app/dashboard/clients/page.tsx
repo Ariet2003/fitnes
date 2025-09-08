@@ -38,6 +38,10 @@ interface Client {
     tariff: {
       name: string;
     };
+    trainer?: {
+      id: number;
+      name: string;
+    };
   }>;
   visits: Array<{
     visitDate: string;
@@ -57,13 +61,22 @@ interface Tariff {
   freezeLimit: number;
 }
 
+interface Trainer {
+  id: number;
+  name: string;
+  description: string;
+  price: number;
+}
+
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([]);
   const [tariffs, setTariffs] = useState<Tariff[]>([]);
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [tariffFilter, setTariffFilter] = useState('all');
+  const [trainerFilter, setTrainerFilter] = useState('all');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [currentPage, setCurrentPage] = useState(1);
@@ -78,7 +91,8 @@ export default function ClientsPage() {
   useEffect(() => {
     loadClients();
     loadTariffs();
-  }, [searchTerm, statusFilter, tariffFilter, sortBy, sortOrder, currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
+    loadTrainers();
+  }, [searchTerm, statusFilter, tariffFilter, trainerFilter, sortBy, sortOrder, currentPage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Функция для принудительной перезагрузки данных (без сброса фильтров)
   const refreshData = () => {
@@ -91,6 +105,7 @@ export default function ClientsPage() {
         search: searchTerm,
         status: statusFilter,
         tariffId: tariffFilter === 'all' ? '' : tariffFilter,
+        trainerId: trainerFilter === 'all' ? '' : trainerFilter,
         sortBy,
         sortOrder,
         page: currentPage.toString(),
@@ -129,6 +144,18 @@ export default function ClientsPage() {
       setTariffs(data);
     } catch (error) {
       console.error('Ошибка загрузки тарифов:', error);
+    }
+  };
+
+  const loadTrainers = async () => {
+    try {
+      const response = await fetch('/api/trainers?limit=100');
+      const data = await response.json();
+      if (data.trainers) {
+        setTrainers(data.trainers);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки тренеров:', error);
     }
   };
 
@@ -295,6 +322,27 @@ export default function ClientsPage() {
             </div>
           </div>
 
+          {/* Trainer filter */}
+          <div className="relative">
+            <select
+              value={trainerFilter}
+              onChange={(e) => setTrainerFilter(e.target.value)}
+              className="appearance-none w-full px-4 py-3 pr-10 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all"
+            >
+              <option value="all">Все тренеры</option>
+              {trainers.map(trainer => (
+                <option key={trainer.id} value={trainer.id.toString()}>
+                  {trainer.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+
           {/* Sort */}
           <div className="relative">
             <select
@@ -310,6 +358,8 @@ export default function ClientsPage() {
               <option value="createdAt-asc">Старые первыми</option>
               <option value="fullName-asc">По имени (А-Я)</option>
               <option value="fullName-desc">По имени (Я-А)</option>
+              <option value="trainer-asc">По тренеру (А-Я)</option>
+              <option value="trainer-desc">По тренеру (Я-А)</option>
             </select>
             <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
               <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -374,6 +424,27 @@ export default function ClientsPage() {
               </div>
             </div>
 
+            {/* Фильтр по тренеру */}
+            <div className="relative">
+              <select
+                value={trainerFilter}
+                onChange={(e) => setTrainerFilter(e.target.value)}
+                className="appearance-none px-4 py-3 pr-10 bg-gray-700/50 border border-gray-600/50 rounded-xl text-white focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition-all min-w-[140px]"
+              >
+                <option value="all">Все тренеры</option>
+                {trainers.map(trainer => (
+                  <option key={trainer.id} value={trainer.id.toString()}>
+                    {trainer.name}
+                  </option>
+                ))}
+              </select>
+              <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+
             {/* Сортировка */}
             <div className="relative">
               <select
@@ -389,6 +460,8 @@ export default function ClientsPage() {
                 <option value="createdAt-asc">Старые первыми</option>
                 <option value="fullName-asc">По имени (А-Я)</option>
                 <option value="fullName-desc">По имени (Я-А)</option>
+                <option value="trainer-asc">По тренеру (А-Я)</option>
+                <option value="trainer-desc">По тренеру (Я-А)</option>
               </select>
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -404,10 +477,11 @@ export default function ClientsPage() {
       <div className="bg-gray-800/50 backdrop-blur-sm rounded-2xl border border-gray-700/50 shadow-xl overflow-hidden">
         {/* Заголовки таблицы */}
         <div className="hidden md:grid grid-cols-12 gap-4 p-4 bg-gray-700/50 border-b border-gray-600/50 text-sm font-medium text-gray-300">
-          <div className="col-span-4">Клиент</div>
+          <div className="col-span-3">Клиент</div>
           <div className="col-span-2">Статус</div>
           <div className="col-span-2">Абонемент</div>
-          <div className="col-span-2">Посещения</div>
+          <div className="col-span-2">Тренер</div>
+          <div className="col-span-1">Посещения</div>
           <div className="col-span-2">Действия</div>
         </div>
 
@@ -474,6 +548,18 @@ export default function ClientsPage() {
                     )}
                   </div>
                   <div>
+                    <span className="text-gray-400">Тренер:</span>
+                    {client.subscriptions && client.subscriptions.length > 0 && client.subscriptions[0].trainer ? (
+                      <div className="mt-1">
+                        <p className="text-white font-medium">{client.subscriptions[0].trainer.name}</p>
+                      </div>
+                    ) : (
+                      <p className="text-gray-500 mt-1">Не назначен</p>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-4 text-sm">
+                  <div>
                     <span className="text-gray-400">Посещения:</span>
                     <div className="mt-1">
                       <p className="text-white font-medium">{client._count.visits} всего</p>
@@ -515,7 +601,7 @@ export default function ClientsPage() {
               {/* Десктопная версия */}
               <div className="hidden md:grid grid-cols-12 gap-4 items-center">
                 {/* Клиент */}
-                <div className="col-span-4 flex items-center space-x-3">
+                <div className="col-span-3 flex items-center space-x-3">
                   <div className="relative flex-shrink-0">
                     {client.photoUrl ? (
                       <Image
@@ -571,9 +657,20 @@ export default function ClientsPage() {
                   )}
                 </div>
 
-                {/* Посещения */}
+                {/* Тренер */}
                 <div className="col-span-2">
-                  <p className="text-white text-sm font-medium">{client._count.visits} всего</p>
+                  {client.subscriptions && client.subscriptions.length > 0 && client.subscriptions[0].trainer ? (
+                    <div>
+                      <p className="text-white text-sm font-medium">{client.subscriptions[0].trainer.name}</p>
+                    </div>
+                  ) : (
+                    <span className="text-gray-500 text-sm">Не назначен</span>
+                  )}
+                </div>
+
+                {/* Посещения */}
+                <div className="col-span-1">
+                  <p className="text-white text-sm font-medium">{client._count.visits}</p>
                   <p className="text-gray-400 text-xs">{getLastVisit(client.visits)}</p>
                 </div>
 

@@ -11,7 +11,8 @@ import {
   Dumbbell,
   Settings,
   Camera,
-  CameraOff
+  CameraOff,
+  UserCheck
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -160,6 +161,14 @@ export default function Header({ onToggleSidebar, isQRScannerEnabled, onToggleQR
           {/* Dropdown меню */}
           {showUserMenu && (
             <div className="absolute right-0 mt-2 w-48 sm:w-52 bg-gray-800 rounded-lg sm:rounded-xl shadow-lg border border-gray-700 py-2 z-50 animate-in slide-in-from-top-2 duration-200">
+              <Link
+                href="/dashboard/trainers"
+                onClick={() => setShowUserMenu(false)}
+                className="flex items-center px-3 sm:px-4 py-2.5 text-sm text-gray-300 hover:bg-gray-700 hover:text-white transition-colors"
+              >
+                <UserCheck className="w-4 h-4 mr-2 sm:mr-3" />
+                Тренеры
+              </Link>
               <Link
                 href="/dashboard/settings"
                 onClick={() => setShowUserMenu(false)}

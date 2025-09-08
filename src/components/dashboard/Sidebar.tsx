@@ -4,13 +4,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
   Users, 
-  CreditCard, 
   ShoppingBag, 
   Megaphone, 
   BarChart3,
   LogOut,
   Tag,
-  Bell
+  UserCheck
 } from 'lucide-react';
 
 const menuItems = [
@@ -25,6 +24,12 @@ const menuItems = [
     href: '/dashboard/tariffs',
     icon: Tag,
     description: 'Управление тарифами'
+  },
+  {
+    name: 'Тренеры',
+    href: '/dashboard/trainers',
+    icon: UserCheck,
+    description: 'Управление тренерами'
   },
   {
     name: 'Магазин',

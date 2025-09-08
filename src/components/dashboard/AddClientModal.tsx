@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
-import { X, User, Phone, MessageCircle, CreditCard, Camera } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { X, User, Phone, MessageCircle, CreditCard, Camera, UserCheck } from 'lucide-react';
 import Image from 'next/image';
 import ImageModal from '../ui/ImageModal';
 // Динамический импорт для избежания проблем с SSR
@@ -15,6 +15,13 @@ interface Tariff {
   freezeLimit: number;
 }
 
+interface Trainer {
+  id: number;
+  name: string;
+  description: string;
+  price: number;
+}
+
 interface AddClientModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -23,11 +30,14 @@ interface AddClientModalProps {
 }
 
 export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded }: AddClientModalProps) {
+  const [trainers, setTrainers] = useState<Trainer[]>([]);
+  const [loadingTrainers, setLoadingTrainers] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
     phone: '',
     telegramId: '',
     tariffId: '',
+    trainerId: '',
     photoUrl: '',
     startDate: new Date().toISOString().split('T')[0] // сегодняшняя дата по умолчанию
   });
@@ -47,6 +57,33 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [currentFacingMode, setCurrentFacingMode] = useState<'user' | 'environment'>('user');
   const [showImageModal, setShowImageModal] = useState(false);
+
+  // Загрузка тренеров при открытии модального окна
+  useEffect(() => {
+    if (isOpen && !loadingTrainers && trainers.length === 0) {
+      loadTrainers();
+    }
+  }, [isOpen, loadingTrainers, trainers.length]);
+
+  const loadTrainers = async () => {
+    try {
+      setLoadingTrainers(true);
+      const response = await fetch('/api/trainers?limit=100'); // загружаем всех тренеров
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Ошибка при загрузке тренеров');
+      }
+
+      if (data.trainers) {
+        setTrainers(data.trainers);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки тренеров:', error);
+    } finally {
+      setLoadingTrainers(false);
+    }
+  };
 
   // Типы для поддержки старых API камеры
   interface NavigatorWithDeprecatedMediaAPI extends Navigator {
@@ -87,6 +124,30 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
 
   const getSelectedTariff = () => {
     return formData.tariffId ? tariffs.find(t => t.id === parseInt(formData.tariffId)) : null;
+  };
+
+  const getSelectedTrainer = () => {
+    return formData.trainerId ? trainers.find(t => t.id === parseInt(formData.trainerId)) : null;
+  };
+
+  const calculateTotalPrice = () => {
+    const selectedTariff = getSelectedTariff();
+    const selectedTrainer = getSelectedTrainer();
+    
+    let total = 0;
+    if (selectedTariff) total += Number(selectedTariff.price);
+    if (selectedTrainer) total += Number(selectedTrainer.price);
+    
+    return total;
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('ru-RU', {
+      style: 'currency',
+      currency: 'RUB',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(price);
   };
 
   const calculateEndDate = () => {
@@ -480,7 +541,8 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
       const dataToSend = {
         ...formData,
         phone: formData.phone,
-        tariffId: formData.tariffId || null
+        tariffId: formData.tariffId || null,
+        trainerId: formData.trainerId || null
       };
       
       const response = await fetch('/api/clients', {
@@ -502,6 +564,7 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
         phone: '',
         telegramId: '',
         tariffId: '',
+        trainerId: '',
         photoUrl: '',
         startDate: new Date().toISOString().split('T')[0]
       });
@@ -783,6 +846,32 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
             )}
           </div>
 
+          {/* Trainer */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              Тренер
+            </label>
+            <div className="relative">
+              <UserCheck className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <select
+                name="trainerId"
+                value={formData.trainerId}
+                onChange={handleInputChange}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
+                disabled={loadingTrainers}
+              >
+                <option value="">
+                  {loadingTrainers ? 'Загрузка тренеров...' : 'Выберите тренера (опционально)'}
+                </option>
+                {trainers.map(trainer => (
+                  <option key={trainer.id} value={trainer.id}>
+                    {trainer.name} - ₽{trainer.price} за тренировку
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* Tariff */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-1">
@@ -805,6 +894,33 @@ export default function AddClientModal({ isOpen, onClose, tariffs, onClientAdded
               </select>
             </div>
           </div>
+
+          {/* Total Price Display */}
+          {(formData.tariffId || formData.trainerId) && (
+            <div className="bg-blue-900/30 border border-blue-700 rounded-lg p-4">
+              <h4 className="text-blue-300 font-medium mb-2">Расчет стоимости:</h4>
+              <div className="space-y-1 text-sm">
+                {getSelectedTariff() && (
+                  <div className="flex justify-between text-gray-300">
+                    <span>Тариф "{getSelectedTariff()!.name}":</span>
+                    <span>{formatPrice(Number(getSelectedTariff()!.price))}</span>
+                  </div>
+                )}
+                {getSelectedTrainer() && (
+                  <div className="flex justify-between text-gray-300">
+                    <span>Тренер "{getSelectedTrainer()!.name}":</span>
+                    <span>{formatPrice(Number(getSelectedTrainer()!.price))}</span>
+                  </div>
+                )}
+                <div className="border-t border-blue-600 pt-2 mt-2">
+                  <div className="flex justify-between text-blue-300 font-semibold">
+                    <span>Общая сумма:</span>
+                    <span>{formatPrice(calculateTotalPrice())}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Start Date - показываем только если выбран тариф */}
           {formData.tariffId && (

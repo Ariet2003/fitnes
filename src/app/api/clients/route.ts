@@ -8,7 +8,8 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search') || '';
     const status = searchParams.get('status') || 'all';
     const tariffId = searchParams.get('tariffId');
-    const allowedSortFields = ['createdAt', 'fullName', 'phone', 'updatedAt'];
+    const trainerId = searchParams.get('trainerId');
+    const allowedSortFields = ['createdAt', 'fullName', 'phone', 'updatedAt', 'trainer'];
     const requestedSortBy = searchParams.get('sortBy') || 'createdAt';
     const sortBy = allowedSortFields.includes(requestedSortBy) ? requestedSortBy : 'createdAt';
     const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
@@ -77,6 +78,41 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Фильтрация по тренеру (только для активных подписок)
+    if (trainerId) {
+      const subscriptionFilter = where.subscriptions as { some?: Record<string, unknown>; every?: Record<string, unknown> } | undefined;
+      
+      if (!subscriptionFilter) {
+        where.subscriptions = {
+          some: {
+            status: 'active',
+            trainerId: parseInt(trainerId)
+          }
+        };
+      } else if (subscriptionFilter.some) {
+        where.subscriptions = {
+          some: {
+            ...subscriptionFilter.some,
+            status: 'active',
+            trainerId: parseInt(trainerId)
+          }
+        };
+      } else if (subscriptionFilter.every) {
+        // Если был фильтр "без абонемента", добавляем условие OR
+        where.OR = [
+          { subscriptions: subscriptionFilter },
+          {
+            subscriptions: {
+              some: {
+                status: 'active',
+                trainerId: parseInt(trainerId)
+              }
+            }
+          }
+        ];
+      }
+    }
+
     // Получаем клиентов с пагинацией
     const [clients, totalCount] = await Promise.all([
       prisma.client.findMany({
@@ -88,7 +124,8 @@ export async function GET(request: NextRequest) {
             ],
             take: 1,
             include: {
-              tariff: true
+              tariff: true,
+              trainer: true
             }
           },
           visits: {
@@ -102,7 +139,11 @@ export async function GET(request: NextRequest) {
             }
           }
         },
-        orderBy: { [sortBy]: sortOrder },
+        orderBy: sortBy === 'trainer' ? {
+          subscriptions: {
+            _count: sortOrder
+          }
+        } : { [sortBy]: sortOrder },
         skip: (page - 1) * limit,
         take: limit
       }),
@@ -131,7 +172,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { fullName, phone, photoUrl, telegramId, tariffId, startDate } = body;
+    const { fullName, phone, photoUrl, telegramId, tariffId, trainerId, startDate } = body;
 
     // Проверяем обязательные поля
     if (!fullName || !phone) {
@@ -205,6 +246,7 @@ export async function POST(request: NextRequest) {
             data: {
               clientId: client.id,
               tariffId: tariff.id,
+              trainerId: trainerId && trainerId !== '' ? parseInt(trainerId, 10) : null,
               startDate: subscriptionStartDate,
               endDate,
               status: 'active',
@@ -225,7 +267,8 @@ export async function POST(request: NextRequest) {
       include: {
         subscriptions: {
           include: {
-            tariff: true
+            tariff: true,
+            trainer: true
           },
           orderBy: { createdAt: 'desc' }
         }

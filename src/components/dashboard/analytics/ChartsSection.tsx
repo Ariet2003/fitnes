@@ -13,6 +13,9 @@ interface ChartData {
   revenueByMonth: Array<{ month: string; revenue: number; fullDate: string }>;
   visitsByWeekday: Array<{ day: string; visits: number }>;
   topClients: Array<{ id: number; fullName: string; visits: number }>;
+  popularTrainers: Array<{ id: number; name: string; subscriptions: number; price: number }>;
+  trainerRevenue: Array<{ id: number; name: string; subscriptions: number; revenue: number; price: number }>;
+  trainerDistribution: Array<{ name: string; clients: number }>;
 }
 
 interface ChartsSectionProps {
@@ -296,6 +299,149 @@ export default function ChartsSection({ data }: ChartsSectionProps) {
               ))}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Популярные тренеры */}
+      <div className="bg-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-gray-700" data-chart="popular-trainers">
+        <h3 className="text-lg sm:text-xl font-semibold text-white mb-4">
+          Популярные тренеры
+        </h3>
+        <div className="h-64 sm:h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.popularTrainers}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis 
+                dataKey="name" 
+                stroke="#9CA3AF"
+                fontSize={12}
+                angle={-45}
+                textAnchor="end"
+                height={80}
+              />
+              <YAxis 
+                stroke="#9CA3AF"
+                fontSize={12}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar 
+                dataKey="subscriptions" 
+                fill="#06B6D4"
+                radius={[4, 4, 0, 0]}
+                name="Клиентов"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Выручка по тренерам */}
+      <div className="bg-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-gray-700" data-chart="trainer-revenue">
+        <h3 className="text-lg sm:text-xl font-semibold text-white mb-4">
+          Выручка по тренерам
+        </h3>
+        <div className="h-64 sm:h-80">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data.trainerRevenue}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis 
+                dataKey="name" 
+                stroke="#9CA3AF"
+                fontSize={12}
+                angle={-45}
+                textAnchor="end"
+                height={80}
+              />
+              <YAxis 
+                stroke="#9CA3AF"
+                fontSize={12}
+                tickFormatter={(value) => `${value.toLocaleString('ru-RU')} ₽`}
+              />
+              <Tooltip 
+                formatter={(value: number) => [`${value.toLocaleString('ru-RU')} ₽`, 'Выручка']}
+                content={<CustomTooltip />}
+              />
+              <Bar 
+                dataKey="revenue" 
+                fill="#10B981"
+                radius={[4, 4, 0, 0]}
+                name="Выручка"
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Распределение клиентов по тренерам */}
+      <div className="lg:col-span-2 bg-gray-800 rounded-xl sm:rounded-2xl p-4 sm:p-6 border border-gray-700" data-chart="trainer-distribution">
+        <h3 className="text-lg sm:text-xl font-semibold text-white mb-4">
+          Распределение клиентов по тренерам
+        </h3>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Пирог-диаграмма */}
+          <div className="h-64 sm:h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={data.trainerDistribution}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={80}
+                  dataKey="clients"
+                  label={({ name, percent }) => `${name}: ${((percent || 0) * 100).toFixed(0)}%`}
+                  labelLine={false}
+                >
+                  {data.trainerDistribution.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip content={<CustomTooltip />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Таблица с подробной статистикой */}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className="text-left text-gray-300 font-medium p-2">Тренер</th>
+                  <th className="text-right text-gray-300 font-medium p-2">Клиентов</th>
+                  <th className="text-right text-gray-300 font-medium p-2">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.trainerDistribution
+                  .sort((a, b) => b.clients - a.clients)
+                  .map((trainer, index) => {
+                    const total = data.trainerDistribution.reduce((sum, t) => sum + t.clients, 0);
+                    const percentage = total > 0 ? (trainer.clients / total * 100).toFixed(1) : '0';
+                    
+                    return (
+                      <tr key={trainer.name} className="border-b border-gray-700/50 hover:bg-gray-700/30">
+                        <td className="p-2">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-4 h-4 rounded-full"
+                              style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                            ></div>
+                            <span className="text-white font-medium">{trainer.name}</span>
+                          </div>
+                        </td>
+                        <td className="p-2 text-right">
+                          <span className="bg-blue-500/20 text-blue-400 px-2 py-1 rounded-full text-sm font-medium">
+                            {trainer.clients}
+                          </span>
+                        </td>
+                        <td className="p-2 text-right text-gray-300">
+                          {percentage}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

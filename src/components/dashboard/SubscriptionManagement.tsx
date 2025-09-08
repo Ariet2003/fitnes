@@ -10,7 +10,8 @@ import {
   AlertCircle,
   CheckCircle,
   X,
-  Calendar
+  Calendar,
+  UserCheck
 } from 'lucide-react';
 
 interface Subscription {
@@ -24,6 +25,11 @@ interface Subscription {
     name: string;
     price: number;
     freezeLimit: number;
+  };
+  trainer?: {
+    id: number;
+    name: string;
+    price: number;
   };
 }
 
@@ -277,7 +283,18 @@ export default function SubscriptionManagement({
                   <h4 className="font-semibold text-white text-sm">
                     {subscription.tariff.name}
                   </h4>
-                  <p className="text-gray-400 text-xs">₽{subscription.tariff.price}</p>
+                  <p className="text-gray-400 text-xs mb-2">₽{subscription.tariff.price}</p>
+                  {subscription.trainer ? (
+                    <div className="inline-flex items-center px-2 py-1 bg-blue-900/40 border border-blue-700/50 rounded-md">
+                      <UserCheck className="w-3 h-3 text-blue-400 mr-1.5" />
+                      <span className="text-blue-200 text-xs font-medium">{subscription.trainer.name}</span>
+                    </div>
+                  ) : (
+                    <div className="inline-flex items-center px-2 py-1 bg-gray-800/60 border border-gray-600/50 rounded-md">
+                      <UserCheck className="w-3 h-3 text-gray-400 mr-1.5" />
+                      <span className="text-gray-300 text-xs">Без тренера</span>
+                    </div>
+                  )}
                 </div>
                 {getStatusBadge(subscription.status)}
               </div>

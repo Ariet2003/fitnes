@@ -17,6 +17,7 @@ export async function GET(
         subscriptions: {
           include: {
             tariff: true,
+            trainer: true,
             visits: {
               orderBy: { visitDate: 'desc' },
               take: 10
@@ -136,7 +137,8 @@ export async function PUT(
       include: {
         subscriptions: {
           include: {
-            tariff: true
+            tariff: true,
+            trainer: true
           }
         }
       }

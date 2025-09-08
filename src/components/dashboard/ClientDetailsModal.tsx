@@ -51,6 +51,11 @@ interface ClientDetails {
       price: number;
       freezeLimit: number;
     };
+    trainer?: {
+      id: number;
+      name: string;
+      price: number;
+    };
   }>;
   visits: Array<{
     id: number;

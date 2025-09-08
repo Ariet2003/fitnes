@@ -51,6 +51,7 @@ model Subscription {
   id           Int            @id @default(autoincrement())
   clientId     Int           @map("client_id")
   tariffId     Int           @map("tariff_id")
+  trainerId    Int?          @map("trainer_id")
   startDate    DateTime      @map("start_date")
   endDate      DateTime      @map("end_date")
   status       String        @default("active") // active, frozen, completed
@@ -62,6 +63,7 @@ model Subscription {
   // Связи
   client       Client        @relation(fields: [clientId], references: [id])
   tariff       Tariff        @relation(fields: [tariffId], references: [id])
+  trainer      Trainer?      @relation(fields: [trainerId], references: [id])
   visits       Visit[]
 
   @@map("subscriptions")
@@ -94,6 +96,22 @@ model Product {
   updatedAt   DateTime      @updatedAt @map("updated_at")
 
   @@map("products")
+}
+
+// Тренеры
+model Trainer {
+  id          Int            @id @default(autoincrement())
+  name        String
+  description String
+  price       Decimal
+  photoUrl    String?       @map("photo_url")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  // Связи
+  subscriptions Subscription[]
+
+  @@map("trainers")
 }
 
 // Сообщения для рассылок
