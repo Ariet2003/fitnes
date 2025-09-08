@@ -11,6 +11,8 @@ class UserTelegramBot {
   private contactsPage: Map<number, number> = new Map(); // chatId -> currentContactIndex
   private productsPage: Map<number, number> = new Map(); // chatId -> currentProductIndex
   private productPhotoPage: Map<number, number> = new Map(); // chatId -> currentPhotoIndex
+  private trainersPage: Map<number, number> = new Map(); // chatId -> currentTrainerIndex
+  private trainerPhotoPage: Map<number, number> = new Map(); // chatId -> currentPhotoIndex
   private feedbackMode: Map<number, boolean> = new Map(); // chatId -> isInFeedbackMode
   private subscriptionsPage: Map<number, number> = new Map(); // chatId -> currentSubscriptionIndex
 
@@ -177,6 +179,21 @@ class UserTelegramBot {
           case 'product_photo_next':
             await this.handleProductPhotoNext(chatId);
             break;
+          case 'trainers':
+            await this.handleTrainers(chatId);
+            break;
+          case 'trainers_prev':
+            await this.handleTrainersPrev(chatId);
+            break;
+          case 'trainers_next':
+            await this.handleTrainersNext(chatId);
+            break;
+          case 'trainer_photo_prev':
+            await this.handleTrainerPhotoPrev(chatId);
+            break;
+          case 'trainer_photo_next':
+            await this.handleTrainerPhotoNext(chatId);
+            break;
           case 'back_to_menu':
             const client = await prisma.client.findUnique({
               where: { telegramId: telegramId }
@@ -262,7 +279,8 @@ class UserTelegramBot {
           { text: '📞 Контакты', callback_data: 'contacts' }
         ],
         [
-          { text: '🛍️ Продукты', callback_data: 'products' }
+          { text: '🛍️ Продукты', callback_data: 'products' },
+          { text: '💪 Тренеры', callback_data: 'trainers' }
         ]
       ]
     };
@@ -318,7 +336,8 @@ class UserTelegramBot {
           { text: '📞 Контакты', callback_data: 'contacts' }
         ],
         [
-          { text: '🛍️ Продукты', callback_data: 'products' }
+          { text: '🛍️ Продукты', callback_data: 'products' },
+          { text: '💪 Тренеры', callback_data: 'trainers' }
         ]
       ]
     };
@@ -336,13 +355,15 @@ class UserTelegramBot {
   // Обработка информации об абонементе
   private async handleSubscriptionInfo(chatId: number, telegramId: string) {
     try {
-      const client = await prisma.client.findUnique({
+      const client: any = await prisma.client.findUnique({
         where: { telegramId: telegramId },
         include: {
           subscriptions: {
             where: { status: 'active' },
             include: { 
               tariff: true,
+              // @ts-ignore
+              trainer: true,
               visits: {
                 orderBy: { visitDate: 'desc' }
               }
@@ -373,10 +394,16 @@ class UserTelegramBot {
       const totalVisits = subscription.visits.length;
       const remainingVisits = Math.max(0, tariff.durationDays - totalVisits);
 
+      // Информация о тренере
+      const trainerInfo = subscription.trainer 
+        ? `💪 **Тренер:** ${subscription.trainer.name} (${subscription.trainer.price} ₽)`
+        : '💪 **Тренер:** Без тренера';
+
       const message = `📝 Информация о вашем абонементе:
 
 🏷️ **Название:** ${tariff.name}
 💰 **Цена:** ${tariff.price} ₽
+${trainerInfo}
 📅 **Срок действия:** ${tariff.duration} мес. (до ${endDate})
 🔢 **Количество посещений:** ${tariff.durationDays} дней
 ⏰ **Время доступа:** ${tariff.startTime} - ${tariff.endTime}
@@ -407,12 +434,16 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
   // Обработка истории абонементов
   private async handleSubscriptionHistory(chatId: number, telegramId: string) {
     try {
-      const client = await prisma.client.findUnique({
+      const client: any = await prisma.client.findUnique({
         where: { telegramId: telegramId },
         include: {
           subscriptions: {
             where: { status: { in: ['completed', 'active'] } },
-            include: { tariff: true },
+            include: { 
+              tariff: true,
+              // @ts-ignore
+              trainer: true
+            },
             orderBy: { createdAt: 'desc' },
             take: 4 // Берем 4 (активный + 3 предыдущих)
           }
@@ -434,15 +465,17 @@ ${remainingDays <= 7 ? '⚠️ Ваш абонемент скоро истека
 
       let message = '📜 **История ваших абонементов:**\n\n';
       
-      client.subscriptions.forEach((subscription, index) => {
+      client.subscriptions.forEach((subscription: any, index: number) => {
         const tariff = subscription.tariff;
         const startDate = new Date(subscription.startDate).toLocaleDateString('ru-RU');
         const endDate = new Date(subscription.endDate).toLocaleDateString('ru-RU');
         const status = subscription.status === 'active' ? '🟢 Активный' : '⚪ Завершён';
+        const trainerInfo = subscription.trainer ? `💪 ${subscription.trainer.name}` : '👨‍💪 Без тренера';
         
         message += `**${index + 1}. ${tariff.name}** ${status}\n`;
         message += `📅 ${startDate} - ${endDate}\n`;
         message += `💰 ${tariff.price} ₽\n`;
+        message += `${trainerInfo}\n`;
         if (index < client.subscriptions.length - 1) {
           message += '\n';
         }
@@ -1170,6 +1203,171 @@ ${socialText}`;
       }
     } catch (error) {
       console.error('Ошибка при переключении фото:', error);
+    }
+  }
+
+  // Обработка тренеров
+  private async handleTrainers(chatId: number) {
+    // Сбрасываем индексы при первом открытии
+    this.trainersPage.set(chatId, 0);
+    this.trainerPhotoPage.set(chatId, 0);
+    await this.showTrainers(chatId);
+  }
+
+  // Показать тренеров с пагинацией
+  private async showTrainers(chatId: number) {
+    try {
+      const trainers = await prisma.trainer.findMany({
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (!trainers || trainers.length === 0) {
+        const message = '❌ Тренеры не найдены.';
+        const keyboard = {
+          inline_keyboard: [[{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]]
+        };
+
+        await this.sendTextMessage(chatId, message, keyboard);
+        return;
+      }
+
+      const currentTrainerIndex = this.trainersPage.get(chatId) || 0;
+      const currentPhotoIndex = this.trainerPhotoPage.get(chatId) || 0;
+      const trainer = trainers[currentTrainerIndex];
+      const totalTrainers = trainers.length;
+
+      // Извлекаем URL изображений
+      const imageUrls = this.extractImageUrls(trainer.photoUrl);
+      const totalPhotos = imageUrls.length;
+      const hasPhotos = totalPhotos > 0;
+
+      // Формируем подпись к тренеру
+      let caption = `💪 **${trainer.name}**`;
+      
+      if (totalTrainers > 1) {
+        caption += ` (${currentTrainerIndex + 1}/${totalTrainers})`;
+      }
+      
+      if (hasPhotos && totalPhotos > 1) {
+        caption += `\n📸 Фото ${currentPhotoIndex + 1}/${totalPhotos}`;
+      }
+
+      caption += `\n\n💰 **Цена за тренировку:** ${trainer.price} ₽\n\n📝 ${trainer.description}`;
+
+      // Создаем клавиатуру с навигацией
+      const keyboard: any = { inline_keyboard: [] };
+
+      // Кнопки навигации по фото (если фото больше одного)
+      if (hasPhotos && totalPhotos > 1) {
+        const photoButtons = [];
+        if (currentPhotoIndex > 0) {
+          photoButtons.push({ text: '⬅️ Фото', callback_data: 'trainer_photo_prev' });
+        }
+        if (currentPhotoIndex < totalPhotos - 1) {
+          photoButtons.push({ text: 'Фото ➡️', callback_data: 'trainer_photo_next' });
+        }
+        if (photoButtons.length > 0) {
+          keyboard.inline_keyboard.push(photoButtons);
+        }
+      }
+
+      // Кнопки навигации по тренерам (если тренеров больше одного)
+      if (totalTrainers > 1) {
+        const trainerButtons = [];
+        if (currentTrainerIndex > 0) {
+          trainerButtons.push({ text: '⬅️ Тренер', callback_data: 'trainers_prev' });
+        }
+        if (currentTrainerIndex < totalTrainers - 1) {
+          trainerButtons.push({ text: 'Тренер ➡️', callback_data: 'trainers_next' });
+        }
+        if (trainerButtons.length > 0) {
+          keyboard.inline_keyboard.push(trainerButtons);
+        }
+      }
+
+      // Кнопка "Назад в меню"
+      keyboard.inline_keyboard.push([{ text: '🔙 Назад в меню', callback_data: 'back_to_menu' }]);
+
+      // Отправляем или редактируем сообщение
+      if (hasPhotos) {
+        const currentPhotoUrl = imageUrls[currentPhotoIndex];
+        const lastMessage = this.lastBotMessage.get(chatId);
+        
+        if (lastMessage?.hasPhoto) {
+          // Редактируем существующее фото
+          const edited = await this.editLastMediaMessage(chatId, currentPhotoUrl, caption, keyboard);
+          if (!edited) {
+            await this.deletePreviousMessages(chatId);
+            await this.sendPhoto(chatId, currentPhotoUrl, caption, keyboard);
+          }
+        } else {
+          // Предыдущее было текстовым, отправляем новое фото
+          await this.deletePreviousMessages(chatId);
+          await this.sendPhoto(chatId, currentPhotoUrl, caption, keyboard);
+        }
+      } else {
+        // Тренер без фото - отправляем текстовое сообщение
+        await this.sendTextMessage(chatId, caption, keyboard);
+      }
+    } catch (error) {
+      console.error('Ошибка при получении тренеров:', error);
+      const errorMessage = '❌ Ошибка при получении списка тренеров.';
+      const edited = await this.editLastMessage(chatId, errorMessage);
+      if (!edited) {
+        await this.sendMessage(chatId, errorMessage);
+      }
+    }
+  }
+
+  // Предыдущий тренер
+  private async handleTrainersPrev(chatId: number) {
+    const currentIndex = this.trainersPage.get(chatId) || 0;
+    if (currentIndex > 0) {
+      this.trainersPage.set(chatId, currentIndex - 1);
+      this.trainerPhotoPage.set(chatId, 0); // Сбрасываем фото на первое
+      await this.showTrainers(chatId);
+    }
+  }
+
+  // Следующий тренер
+  private async handleTrainersNext(chatId: number) {
+    const trainers = await prisma.trainer.findMany();
+    const currentIndex = this.trainersPage.get(chatId) || 0;
+    
+    if (currentIndex < trainers.length - 1) {
+      this.trainersPage.set(chatId, currentIndex + 1);
+      this.trainerPhotoPage.set(chatId, 0); // Сбрасываем фото на первое
+      await this.showTrainers(chatId);
+    }
+  }
+
+  // Предыдущее фото тренера
+  private async handleTrainerPhotoPrev(chatId: number) {
+    const currentIndex = this.trainerPhotoPage.get(chatId) || 0;
+    if (currentIndex > 0) {
+      this.trainerPhotoPage.set(chatId, currentIndex - 1);
+      await this.showTrainers(chatId);
+    }
+  }
+
+  // Следующее фото тренера
+  private async handleTrainerPhotoNext(chatId: number) {
+    try {
+      const trainers = await prisma.trainer.findMany({ orderBy: { createdAt: 'desc' } });
+      const currentTrainerIndex = this.trainersPage.get(chatId) || 0;
+      const trainer = trainers[currentTrainerIndex];
+      
+      if (trainer) {
+        const imageUrls = this.extractImageUrls(trainer.photoUrl);
+        const currentPhotoIndex = this.trainerPhotoPage.get(chatId) || 0;
+        
+        if (currentPhotoIndex < imageUrls.length - 1) {
+          this.trainerPhotoPage.set(chatId, currentPhotoIndex + 1);
+          await this.showTrainers(chatId);
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка при переключении фото тренера:', error);
     }
   }
 
